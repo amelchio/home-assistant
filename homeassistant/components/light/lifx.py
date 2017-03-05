@@ -20,7 +20,8 @@ import homeassistant.helpers.config_validation as cv
 
 _LOGGER = logging.getLogger(__name__)
 
-REQUIREMENTS = ['liffylights==0.9.4']
+# TODO: Not yet available for Python 3
+# REQUIREMENTS = ['lifxlan==0.5.0']
 
 BYTE_MAX = 255
 
@@ -63,58 +64,34 @@ class LIFX(object):
     def __init__(self, add_devices_callback, server_addr=None,
                  broadcast_addr=None):
         """Initialize the light."""
-        import liffylights
+        import lifxlan
 
-        self._devices = []
+        self._devices = {}
 
         self._add_devices_callback = add_devices_callback
 
-        self._liffylights = liffylights.LiffyLights(
-            self.on_device, self.on_power, self.on_color, server_addr,
-            broadcast_addr)
+        # TODO: support broadcast_addr?
+        self._lifxlan = lifxlan.LifxLAN()
 
-    def find_bulb(self, ipaddr):
-        """Search for bulbs."""
-        bulb = None
-        for device in self._devices:
-            if device.ipaddr == ipaddr:
-                bulb = device
-                break
-        return bulb
-
-    def on_device(self, ipaddr, name, power, hue, sat, bri, kel):
+    def on_device(self, device):
         """Initialize the light."""
-        bulb = self.find_bulb(ipaddr)
 
-        if bulb is None:
-            _LOGGER.debug("new bulb %s %s %d %d %d %d %d",
-                          ipaddr, name, power, hue, sat, bri, kel)
-            bulb = LIFXLight(
-                self._liffylights, ipaddr, name, power, hue, sat, bri, kel)
-            self._devices.append(bulb)
+        # Request label, power and color from the network
+        hsbk = device.get_color()
+
+        _LOGGER.debug("bulb %s %s %d %d %d %d %d",
+                      device.ip_addr, device.label, device.power_level, *hsbk)
+
+        try:
+            bulb = self._devices[device.ip_addr]
+            bulb.set_power(device.power_level)
+            bulb.set_color(*hsbk)
+            bulb.schedule_update_ha_state()
+        except (KeyError):
+            _LOGGER.debug("new bulb %s %s", device.ip_addr, device.label)
+            bulb = LIFXLight(device)
+            self._devices[device.ip_addr] = bulb
             self._add_devices_callback([bulb])
-        else:
-            _LOGGER.debug("update bulb %s %s %d %d %d %d %d",
-                          ipaddr, name, power, hue, sat, bri, kel)
-            bulb.set_power(power)
-            bulb.set_color(hue, sat, bri, kel)
-            bulb.schedule_update_ha_state()
-
-    def on_color(self, ipaddr, hue, sat, bri, kel):
-        """Initialize the light."""
-        bulb = self.find_bulb(ipaddr)
-
-        if bulb is not None:
-            bulb.set_color(hue, sat, bri, kel)
-            bulb.schedule_update_ha_state()
-
-    def on_power(self, ipaddr, power):
-        """Initialize the light."""
-        bulb = self.find_bulb(ipaddr)
-
-        if bulb is not None:
-            bulb.set_power(power)
-            bulb.schedule_update_ha_state()
 
     # pylint: disable=unused-argument
     def poll(self, now):
@@ -123,7 +100,8 @@ class LIFX(object):
 
     def probe(self, address=None):
         """Probe the light."""
-        self._liffylights.probe(address)
+        for device in self._lifxlan.get_lights():
+            self.on_device(device)
 
 
 def convert_rgb_to_hsv(rgb):
@@ -140,16 +118,13 @@ def convert_rgb_to_hsv(rgb):
 class LIFXLight(Light):
     """Representation of a LIFX light."""
 
-    def __init__(self, liffy, ipaddr, name, power, hue, saturation, brightness,
-                 kelvin):
+    def __init__(self, device):
         """Initialize the light."""
-        _LOGGER.debug("LIFXLight: %s %s", ipaddr, name)
+        _LOGGER.debug("LIFXLight: %s %s", device.ip_addr, device.label)
 
-        self._liffylights = liffy
-        self._ip = ipaddr
-        self.set_name(name)
-        self.set_power(power)
-        self.set_color(hue, saturation, brightness, kelvin)
+        self._device = device
+        self.set_power(device.power_level)
+        self.set_color(*device.color)
 
     @property
     def should_poll(self):
@@ -159,12 +134,12 @@ class LIFXLight(Light):
     @property
     def name(self):
         """Return the name of the device."""
-        return self._name
+        return self._device.label
 
     @property
     def ipaddr(self):
         """Return the IP address of the device."""
-        return self._ip
+        return self._device.ip_addr
 
     @property
     def rgb_color(self):
@@ -225,17 +200,20 @@ class LIFXLight(Light):
         else:
             kelvin = self._kel
 
+        hsbk = [ hue, saturation, brightness, kelvin ]
         _LOGGER.debug("turn_on: %s (%d) %d %d %d %d %d",
-                      self._ip, self._power,
-                      hue, saturation, brightness, kelvin, fade)
+                      self.ipaddr, self._power, *hsbk, fade)
 
         if self._power == 0:
-            self._liffylights.set_color(self._ip, hue, saturation,
-                                        brightness, kelvin, 0)
-            self._liffylights.set_power(self._ip, 65535, fade)
+            self._device.set_color(hsbk, 0)
+            self._device.set_power(True, fade)
         else:
-            self._liffylights.set_color(self._ip, hue, saturation,
-                                        brightness, kelvin, fade)
+            self._device.set_power(True, 0)     # racing for power status
+            self._device.set_color(hsbk, fade)
+
+        self.set_power(True)
+        self.set_color(*hsbk)
+        self.schedule_update_ha_state()
 
     def turn_off(self, **kwargs):
         """Turn the device off."""
@@ -244,8 +222,11 @@ class LIFXLight(Light):
         else:
             fade = 0
 
-        _LOGGER.debug("turn_off: %s %d", self._ip, fade)
-        self._liffylights.set_power(self._ip, 0, fade)
+        _LOGGER.debug("turn_off: %s %d", self.ipaddr, fade)
+        self._device.set_power(False, fade)
+
+        self.set_power(0)
+        self.schedule_update_ha_state()
 
     def set_name(self, name):
         """Set name of the light."""
