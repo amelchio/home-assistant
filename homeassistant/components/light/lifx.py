@@ -6,6 +6,8 @@ https://home-assistant.io/components/light.lifx/
 """
 import colorsys
 import logging
+import asyncio
+from functools import partial
 
 import voluptuous as vol
 
@@ -13,117 +15,80 @@ from homeassistant.components.light import (
     ATTR_BRIGHTNESS, ATTR_COLOR_TEMP, ATTR_RGB_COLOR, ATTR_TRANSITION,
     SUPPORT_BRIGHTNESS, SUPPORT_COLOR_TEMP, SUPPORT_RGB_COLOR,
     SUPPORT_TRANSITION, Light, PLATFORM_SCHEMA)
-from homeassistant.helpers.event import track_time_change
 from homeassistant.util.color import (
     color_temperature_mired_to_kelvin, color_temperature_kelvin_to_mired)
 import homeassistant.helpers.config_validation as cv
 
 _LOGGER = logging.getLogger(__name__)
 
-REQUIREMENTS = ['liffylights==0.9.4']
+REQUIREMENTS = ['aiolifx==0.4.0']
 
-BYTE_MAX = 255
+UDP_BROADCAST_PORT = 56700
 
-CONF_BROADCAST = 'broadcast'
 CONF_SERVER = 'server'
 
+BYTE_MAX = 255
 SHORT_MAX = 65535
-
-TEMP_MAX = 9000
-TEMP_MAX_HASS = 500
-TEMP_MIN = 2500
-TEMP_MIN_HASS = 154
 
 SUPPORT_LIFX = (SUPPORT_BRIGHTNESS | SUPPORT_COLOR_TEMP | SUPPORT_RGB_COLOR |
                 SUPPORT_TRANSITION)
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
-    vol.Optional(CONF_SERVER, default=None): cv.string,
-    vol.Optional(CONF_BROADCAST, default=None): cv.string,
+    vol.Optional(CONF_SERVER, default='0.0.0.0'): cv.string,
 })
 
 
 # pylint: disable=unused-argument
-def setup_platform(hass, config, add_devices, discovery_info=None):
+@asyncio.coroutine
+def async_setup_platform(hass, config, async_add_devices, discovery_info=None):
     """Setup the LIFX platform."""
+    import aiolifx
+
     server_addr = config.get(CONF_SERVER)
-    broadcast_addr = config.get(CONF_BROADCAST)
 
-    lifx_library = LIFX(add_devices, server_addr, broadcast_addr)
+    lifx_library = LIFX(hass, async_add_devices)
 
-    # Register our poll service
-    track_time_change(hass, lifx_library.poll, second=[10, 40])
+    coro = hass.loop.create_datagram_endpoint(
+        partial(aiolifx.LifxDiscovery, hass.loop, lifx_library),
+        local_addr=(server_addr, UDP_BROADCAST_PORT))
 
-    lifx_library.probe()
+    hass.loop.create_task(coro)
+    return True
 
 
 class LIFX(object):
-    """Representation of a LIFX light."""
-
-    def __init__(self, add_devices_callback, server_addr=None,
-                 broadcast_addr=None):
+    """Representation of all known LIFX entities."""
+    def __init__(self, hass, async_add_devices):
         """Initialize the light."""
-        import liffylights
+        self.entities = {}
+        self.hass = hass
+        self.async_add_devices = async_add_devices
 
-        self._devices = []
-
-        self._add_devices_callback = add_devices_callback
-
-        self._liffylights = liffylights.LiffyLights(
-            self.on_device, self.on_power, self.on_color, server_addr,
-            broadcast_addr)
-
-    def find_bulb(self, ipaddr):
-        """Search for bulbs."""
-        bulb = None
-        for device in self._devices:
-            if device.ipaddr == ipaddr:
-                bulb = device
-                break
-        return bulb
-
-    def on_device(self, ipaddr, name, power, hue, sat, bri, kel):
-        """Initialize the light."""
-        bulb = self.find_bulb(ipaddr)
-
-        if bulb is None:
-            _LOGGER.debug("new bulb %s %s %d %d %d %d %d",
-                          ipaddr, name, power, hue, sat, bri, kel)
-            bulb = LIFXLight(
-                self._liffylights, ipaddr, name, power, hue, sat, bri, kel)
-            self._devices.append(bulb)
-            self._add_devices_callback([bulb])
+    def register(self,device):
+        """Callback for newly detected bulb."""
+        if device.mac_addr in self.entities:
+            entity = self.entities[device.mac_addr]
+            _LOGGER.debug("%s register AGAIN", entity.ipaddr)
+            entity._available = True
+            entity.schedule_update_ha_state()
         else:
-            _LOGGER.debug("update bulb %s %s %d %d %d %d %d",
-                          ipaddr, name, power, hue, sat, bri, kel)
-            bulb.set_power(power)
-            bulb.set_color(hue, sat, bri, kel)
-            bulb.schedule_update_ha_state()
+            _LOGGER.debug("%s register NEW", device.ip_addr)
+            device.get_color(self.ready)
 
-    def on_color(self, ipaddr, hue, sat, bri, kel):
-        """Initialize the light."""
-        bulb = self.find_bulb(ipaddr)
+    def ready(self, device, msg):
+        """Callback that adds the device once all data is retrieved."""
+        entity = LIFXLight(device)
+        _LOGGER.debug("%s register READY", entity.ipaddr)
+        self.entities[device.mac_addr] = entity
+        self.hass.async_add_job(self.async_add_devices([entity]))
 
-        if bulb is not None:
-            bulb.set_color(hue, sat, bri, kel)
-            bulb.schedule_update_ha_state()
-
-    def on_power(self, ipaddr, power):
-        """Initialize the light."""
-        bulb = self.find_bulb(ipaddr)
-
-        if bulb is not None:
-            bulb.set_power(power)
-            bulb.schedule_update_ha_state()
-
-    # pylint: disable=unused-argument
-    def poll(self, now):
-        """Polling for the light."""
-        self.probe()
-
-    def probe(self, address=None):
-        """Probe the light."""
-        self._liffylights.probe(address)
+    def unregister(self,device):
+        """Callback for disappearing bulb."""
+        entity = self.entities[device.mac_addr]
+        _LOGGER.debug("%s unregister", entity.ipaddr)
+        entity._available = False
+        entity.updated_event.set()
+        entity.schedule_update_ha_state()
 
 
 def convert_rgb_to_hsv(rgb):
@@ -140,31 +105,31 @@ def convert_rgb_to_hsv(rgb):
 class LIFXLight(Light):
     """Representation of a LIFX light."""
 
-    def __init__(self, liffy, ipaddr, name, power, hue, saturation, brightness,
-                 kelvin):
+    def __init__(self, device):
         """Initialize the light."""
-        _LOGGER.debug("LIFXLight: %s %s", ipaddr, name)
+        _LOGGER.debug("LIFXLight: %s %s", device.ip_addr, device.label)
 
-        self._liffylights = liffy
-        self._ip = ipaddr
-        self.set_name(name)
-        self.set_power(power)
-        self.set_color(hue, saturation, brightness, kelvin)
+        self.device = device
+        self.updated_event = asyncio.Event()
+        self.blocker = None
+        self._available = True
+        self.set_power(device.power_level)
+        self.set_color(*device.color)
 
     @property
-    def should_poll(self):
-        """No polling needed for LIFX light."""
-        return False
+    def available(self):
+        """Return the availability of the device."""
+        return self._available
 
     @property
     def name(self):
         """Return the name of the device."""
-        return self._name
+        return self.device.label
 
     @property
     def ipaddr(self):
         """Return the IP address of the device."""
-        return self._ip
+        return self.device.ip_addr[0]
 
     @property
     def rgb_color(self):
@@ -199,16 +164,33 @@ class LIFXLight(Light):
         """Flag supported features."""
         return SUPPORT_LIFX
 
-    def turn_on(self, **kwargs):
+    @asyncio.coroutine
+    def update_later(self):
+        """Wait two seconds with updates disabled and then update."""
+        yield from asyncio.sleep(2, loop=self.hass.loop)
+        self.blocker = None
+        self.schedule_update_ha_state(force_refresh=True)
+
+    def block_updates(self):
+        """Lock out async_update while the new state settles on the bulb."""
+        if self.blocker:
+            self.blocker.cancel()
+        self.blocker = asyncio.ensure_future(self.update_later())
+
+    @asyncio.coroutine
+    def async_turn_on(self, **kwargs):
         """Turn the device on."""
         if ATTR_TRANSITION in kwargs:
             fade = int(kwargs[ATTR_TRANSITION] * 1000)
         else:
             fade = 0
 
+        changed_color = False
+
         if ATTR_RGB_COLOR in kwargs:
             hue, saturation, brightness = \
                 convert_rgb_to_hsv(kwargs[ATTR_RGB_COLOR])
+            changed_color = True
         else:
             hue = self._hue
             saturation = self._sat
@@ -216,40 +198,63 @@ class LIFXLight(Light):
 
         if ATTR_BRIGHTNESS in kwargs:
             brightness = kwargs[ATTR_BRIGHTNESS] * (BYTE_MAX + 1)
+            changed_color = True
         else:
             brightness = self._bri
 
         if ATTR_COLOR_TEMP in kwargs:
             kelvin = int(color_temperature_mired_to_kelvin(
                 kwargs[ATTR_COLOR_TEMP]))
+            changed_color = True
         else:
             kelvin = self._kel
 
+        hsbk = [ hue, saturation, brightness, kelvin ]
         _LOGGER.debug("turn_on: %s (%d) %d %d %d %d %d",
-                      self._ip, self._power,
-                      hue, saturation, brightness, kelvin, fade)
+                      self.ipaddr, self._power, *hsbk, fade)
 
         if self._power == 0:
-            self._liffylights.set_color(self._ip, hue, saturation,
-                                        brightness, kelvin, 0)
-            self._liffylights.set_power(self._ip, 65535, fade)
+            if changed_color:
+                self.device.set_color(hsbk, None, 0)
+            self.device.set_power(True, None, fade)
         else:
-            self._liffylights.set_color(self._ip, hue, saturation,
-                                        brightness, kelvin, fade)
+            self.device.set_power(True, None, 0)     # racing for power status
+            if changed_color:
+                self.device.set_color(hsbk, None, fade)
 
-    def turn_off(self, **kwargs):
+        self.block_updates()
+        self.set_power(1)
+        self.set_color(*hsbk)
+
+    @asyncio.coroutine
+    def async_turn_off(self, **kwargs):
         """Turn the device off."""
         if ATTR_TRANSITION in kwargs:
             fade = int(kwargs[ATTR_TRANSITION] * 1000)
         else:
             fade = 0
 
-        _LOGGER.debug("turn_off: %s %d", self._ip, fade)
-        self._liffylights.set_power(self._ip, 0, fade)
+        self.device.set_power(False, None, fade)
 
-    def set_name(self, name):
-        """Set name of the light."""
-        self._name = name
+        self.block_updates()
+        self.set_power(0)
+
+    def got_color(self,device,msg):
+        """Callback that gets current power/color status"""
+        _LOGGER.debug("%s got_color", self.ipaddr)
+        self.set_power(device.power_level)
+        self.set_color(*device.color)
+        self.updated_event.set()
+
+    @asyncio.coroutine
+    def async_update(self):
+        """Update bulb status (if it is available)."""
+        _LOGGER.debug("%s async_update", self.ipaddr)
+        if self.available and self.blocker is None:
+            self.updated_event.clear()
+            self.device.get_color(self.got_color)
+            yield from self.updated_event.wait()
+        _LOGGER.debug("%s async_update done", self.ipaddr)
 
     def set_power(self, power):
         """Set power state value."""
