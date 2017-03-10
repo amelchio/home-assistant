@@ -21,7 +21,7 @@ import homeassistant.helpers.config_validation as cv
 
 _LOGGER = logging.getLogger(__name__)
 
-REQUIREMENTS = ['aiolifx==0.4.0']
+REQUIREMENTS = ['aiolifx==0.4.1']
 
 UDP_BROADCAST_PORT = 56700
 
