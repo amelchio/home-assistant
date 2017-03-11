@@ -8,6 +8,7 @@ import colorsys
 import logging
 import asyncio
 from functools import partial
+from datetime import timedelta
 
 import voluptuous as vol
 
@@ -17,6 +18,9 @@ from homeassistant.components.light import (
     SUPPORT_TRANSITION, Light, PLATFORM_SCHEMA)
 from homeassistant.util.color import (
     color_temperature_mired_to_kelvin, color_temperature_kelvin_to_mired)
+from homeassistant import util
+from homeassistant.core import callback
+from homeassistant.helpers.event import async_track_point_in_utc_time
 import homeassistant.helpers.config_validation as cv
 
 _LOGGER = logging.getLogger(__name__)
@@ -24,6 +28,9 @@ _LOGGER = logging.getLogger(__name__)
 REQUIREMENTS = ['aiolifx==0.4.1']
 
 UDP_BROADCAST_PORT = 56700
+
+# Delay (in ms) expected for changes to take effect in the physical bulb
+BULB_LATENCY = 500
 
 CONF_SERVER = 'server'
 
@@ -112,6 +119,7 @@ class LIFXLight(Light):
         self.device = device
         self.updated_event = asyncio.Event()
         self.blocker = None
+        self.postponed_update = None
         self._available = True
         self.set_power(device.power_level)
         self.set_color(*device.color)
@@ -164,18 +172,32 @@ class LIFXLight(Light):
         """Flag supported features."""
         return SUPPORT_LIFX
 
-    @asyncio.coroutine
-    def update_later(self):
-        """Wait two seconds with updates disabled and then update."""
-        yield from asyncio.sleep(2, loop=self.hass.loop)
+    @callback
+    def update_after_transition(self, now):
+        """Request new status after completion of the last transition."""
+        self.postponed_update = None
+        self.schedule_update_ha_state(force_refresh=True)
+
+    @callback
+    def unblock_updates(self, now):
+        """Allow async_update after the new state has settled on the bulb."""
         self.blocker = None
         self.schedule_update_ha_state(force_refresh=True)
 
-    def block_updates(self):
-        """Lock out async_update while the new state settles on the bulb."""
+    def update_later(self, when):
+        """Block immediate update requests and schedule one for later."""
         if self.blocker:
-            self.blocker.cancel()
-        self.blocker = asyncio.ensure_future(self.update_later())
+            self.blocker()
+        self.blocker = async_track_point_in_utc_time(
+            self.hass, self.unblock_updates,
+            util.dt.utcnow() + timedelta(milliseconds=BULB_LATENCY))
+
+        if self.postponed_update:
+            self.postponed_update()
+        if when > BULB_LATENCY:
+            self.postponed_update = async_track_point_in_utc_time(
+                self.hass, self.update_after_transition,
+                util.dt.utcnow() + timedelta(milliseconds=when+BULB_LATENCY))
 
     @asyncio.coroutine
     def async_turn_on(self, **kwargs):
@@ -222,9 +244,10 @@ class LIFXLight(Light):
             if changed_color:
                 self.device.set_color(hsbk, None, fade)
 
-        self.block_updates()
-        self.set_power(1)
-        self.set_color(*hsbk)
+        self.update_later(0)
+        if fade < BULB_LATENCY:
+            self.set_power(1)
+            self.set_color(*hsbk)
 
     @asyncio.coroutine
     def async_turn_off(self, **kwargs):
@@ -236,8 +259,9 @@ class LIFXLight(Light):
 
         self.device.set_power(False, None, fade)
 
-        self.block_updates()
-        self.set_power(0)
+        self.update_later(fade)
+        if fade < BULB_LATENCY:
+            self.set_power(0)
 
     def got_color(self,device,msg):
         """Callback that gets current power/color status"""
