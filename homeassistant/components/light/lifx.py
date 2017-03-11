@@ -211,7 +211,7 @@ class LIFXLight(Light):
 
         hsbk = [ hue, saturation, brightness, kelvin ]
         _LOGGER.debug("turn_on: %s (%d) %d %d %d %d %d",
-                      self.ipaddr, self._power, *hsbk, fade)
+                      self.ipaddr, self._power, fade, *hsbk)
 
         if self._power == 0:
             if changed_color:
