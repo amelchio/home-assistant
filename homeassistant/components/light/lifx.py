@@ -33,6 +33,9 @@ UDP_BROADCAST_PORT = 56700
 # Delay (in ms) expected for changes to take effect in the physical bulb
 BULB_LATENCY = 500
 
+# Acceptable number of unreplied messages before marking the bulb unavailable
+MAX_MISSED_REPLIES = 2
+
 CONF_SERVER = 'server'
 
 BYTE_MAX = 255
@@ -128,19 +131,22 @@ class LIFXLight(Light):
         self.updated_event = asyncio.Event()
         self.blocker = None
         self.postponed_update = None
-        self._available = True
+        self._missed_replies = 0
         self.set_power(device.power_level)
         self.set_color(*device.color)
 
     @property
     def available(self):
         """Return the availability of the device."""
-        return self._available
+        return self._missed_replies <= MAX_MISSED_REPLIES
 
     @available.setter
     def available(self, value):
         """Set the availability of the device."""
-        self._available = value
+        if value == True:
+            self._missed_replies = 0
+        else:
+            self._missed_replies = self._missed_replies + 1
 
     @property
     def name(self):
@@ -279,6 +285,7 @@ class LIFXLight(Light):
     @callback
     def got_color(self, device, msg):
         """Callback that gets current power/color status."""
+        self.available = True
         self.set_power(device.power_level)
         self.set_color(*device.color)
         self.updated_event.set()
