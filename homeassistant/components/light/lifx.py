@@ -406,6 +406,7 @@ class LIFXLight(Light):
         self.effects_conductor = effects_conductor
         self.registered = True
         self.postponed_update = None
+        self.lock = asyncio.Lock()
 
     @property
     def available(self):
@@ -452,20 +453,25 @@ class LIFXLight(Light):
         return None
 
     @asyncio.coroutine
-    def update_after_transition(self, now):
-        """Request new status after completion of the last transition."""
+    def update_ha(self, now):
+        """Request new status after a state change."""
         self.postponed_update = None
         yield from self.async_update()
         yield from self.async_update_ha_state()
 
-    def update_later(self, when):
-        """Schedule an update requests when a transition is over."""
+    @asyncio.coroutine
+    def update_during_transition(self, when):
+        """Update state at the start and end of a transition."""
         if self.postponed_update:
             self.postponed_update()
-            self.postponed_update = None
+
+        # Transition has started
+        yield from self.update_ha(util.dt.utcnow())
+
+        # Transition has ended
         if when > 0:
             self.postponed_update = async_track_point_in_utc_time(
-                self.hass, self.update_after_transition,
+                self.hass, self.update_ha,
                 util.dt.utcnow() + timedelta(milliseconds=when))
 
     @asyncio.coroutine
@@ -488,6 +494,8 @@ class LIFXLight(Light):
         if ATTR_EFFECT in kwargs:
             yield from self.default_effect(**kwargs)
             return
+
+        yield from self.lock.acquire()
 
         if ATTR_INFRARED in kwargs:
             self.device.set_infrared(convert_8_to_16(kwargs[ATTR_INFRARED]))
@@ -522,8 +530,12 @@ class LIFXLight(Light):
             if power_off:
                 yield from ack(partial(bulb.set_power, False, duration=fade))
 
+        # Avoid state ping-pong by holding off updates while the state settles
+        yield from asyncio.sleep(0.3)
+        self.lock.release()
+
         # Schedule an update when the transition is complete
-        self.update_later(fade)
+        yield from self.update_during_transition(fade)
 
     @asyncio.coroutine
     def send_color(self, ack, hsbk, kwargs, duration):
@@ -544,9 +556,7 @@ class LIFXLight(Light):
     def async_update(self):
         """Update bulb status."""
         _LOGGER.debug("%s async_update", self.who)
-        if self.available:
-            # Avoid state ping-pong by holding off updates as the state settles
-            yield from asyncio.sleep(0.3)
+        if self.available and not self.lock.locked():
             yield from AwaitAioLIFX().wait(self.device.get_color)
 
 
@@ -651,7 +661,7 @@ class LIFXStrip(LIFXColor):
     @asyncio.coroutine
     def async_update(self):
         """Update strip status."""
-        if self.available:
+        if self.available and not self.lock.locked():
             yield from super().async_update()
 
             ack = AwaitAioLIFX().wait
