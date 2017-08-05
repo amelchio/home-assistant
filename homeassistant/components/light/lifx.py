@@ -325,25 +325,23 @@ class LIFXManager(object):
             entity = self.entities[device.mac_addr]
             entity.registered = True
             _LOGGER.debug("%s register AGAIN", entity.who)
-            yield from entity.async_update()
-            yield from entity.async_update_ha_state()
+            yield from entity.update_hass()
         else:
             _LOGGER.debug("%s register NEW", device.ip_addr)
             device.timeout = MESSAGE_TIMEOUT
             device.retry_count = MESSAGE_RETRIES
             device.unregister_timeout = UNAVAILABLE_GRACE
 
-            ack = AwaitAioLIFX().wait
-            yield from ack(device.get_version)
-            yield from ack(device.get_color)
+            yield from AwaitAioLIFX().wait(device.get_version)
 
             if lifxwhite(device):
                 entity = LIFXWhite(device, self.effects_conductor)
             elif lifxmultizone(device):
-                yield from ack(partial(device.get_color_zones, start_index=0))
                 entity = LIFXStrip(device, self.effects_conductor)
             else:
                 entity = LIFXColor(device, self.effects_conductor)
+
+            yield from entity.async_update()
 
             _LOGGER.debug("%s register READY", entity.who)
             self.entities[device.mac_addr] = entity
@@ -453,8 +451,8 @@ class LIFXLight(Light):
         return None
 
     @asyncio.coroutine
-    def update_ha(self, now):
-        """Request new status after a state change."""
+    def update_hass(self, now=None):
+        """Request new status and push it to hass."""
         self.postponed_update = None
         yield from self.async_update()
         yield from self.async_update_ha_state()
@@ -466,12 +464,12 @@ class LIFXLight(Light):
             self.postponed_update()
 
         # Transition has started
-        yield from self.update_ha(util.dt.utcnow())
+        yield from self.update_hass()
 
         # Transition has ended
         if when > 0:
             self.postponed_update = async_track_point_in_utc_time(
-                self.hass, self.update_ha,
+                self.hass, self.update_hass,
                 util.dt.utcnow() + timedelta(milliseconds=when))
 
     @asyncio.coroutine
@@ -668,6 +666,13 @@ class LIFXStrip(LIFXColor):
             ack = AwaitAioLIFX().wait
             bulb = self.device
 
-            # Each get_color_zones returns the next 8 zones
-            for zone in range(0, len(bulb.color_zones), 8):
-                yield from ack(partial(bulb.get_color_zones, start_index=zone))
+            # Each get_color_zones can update 8 zones at once
+            zone = 0
+            top = 1
+            while zone < top:
+                resp = yield from ack(partial(
+                    bulb.get_color_zones,
+                    start_index=zone,
+                    end_index=zone+7))
+                zone += 8
+                top = resp.count
