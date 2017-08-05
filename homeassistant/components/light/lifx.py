@@ -489,13 +489,14 @@ class LIFXLight(Light):
     @asyncio.coroutine
     def async_set_state(self, **kwargs):
         """Set a color on the light and turn it on/off."""
+        yield from self.lock.acquire()
+
         yield from self.effects_conductor.stop([self.device])
 
         if ATTR_EFFECT in kwargs:
             yield from self.default_effect(**kwargs)
+            self.lock.release()
             return
-
-        yield from self.lock.acquire()
 
         if ATTR_INFRARED in kwargs:
             self.device.set_infrared(convert_8_to_16(kwargs[ATTR_INFRARED]))
