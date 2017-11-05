@@ -176,7 +176,7 @@ class SensorTrend(BinarySensorDevice):
             return
 
         # Calculate gradient of linear trend
-        yield from self.hass.async_add_job(self._calculate_gradient)
+        self._calculate_gradient()
 
         # Update state
         self._state = (
@@ -188,10 +188,7 @@ class SensorTrend(BinarySensorDevice):
             self._state = not self._state
 
     def _calculate_gradient(self):
-        """Compute the linear trend gradient of the current samples.
-
-        This need run inside executor.
-        """
+        """Compute the linear trend gradient of the current samples."""
         import numpy as np
         timestamps = np.array([t for t, _ in self.samples])
         values = np.array([s for _, s in self.samples])
