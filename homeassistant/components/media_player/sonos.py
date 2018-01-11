@@ -27,7 +27,7 @@ from homeassistant.util.dt import utcnow
 
 REQUIREMENTS = [
     'https://github.com/amelchio/SoCo/archive/'
-    '76fc722f1173cf53c810042c777f6e21e4d29af7.zip#soco==0.13a1']
+    '0403fbceb1d39adf0a2613b45c7aef0e4edc36af.zip#soco==0.14a4']
 
 _LOGGER = logging.getLogger(__name__)
 
