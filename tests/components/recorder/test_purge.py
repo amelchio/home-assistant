@@ -123,7 +123,7 @@ class TestRecorderPurge(unittest.TestCase):
         """Test deleting old events."""
 
         with session_scope(hass=self.hass) as session:
-            self._add_test_events()
+            self._add_test_events(session)
 
             events = session.query(Events).filter(
                 Events.event_type.like("EVENT_TEST%"))
@@ -141,8 +141,8 @@ class TestRecorderPurge(unittest.TestCase):
 
         with session_scope(hass=self.hass) as session:
             # make sure we start with 6 states
-            self._add_test_events()
-            self._add_test_states()
+            self._add_test_events(session)
+            self._add_test_states(session)
 
             states = session.query(States)
             self.assertEqual(states.count(), 6)
