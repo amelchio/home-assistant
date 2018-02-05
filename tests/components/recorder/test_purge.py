@@ -25,90 +25,91 @@ class TestRecorderPurge(unittest.TestCase):
         """Stop everything that was started."""
         self.hass.stop()
 
-    def _add_test_states(self):
+    def _add_test_states(self, session):
         """Add multiple states to the db for testing."""
         now = datetime.now()
         five_days_ago = now - timedelta(days=5)
         attributes = {'test_attr': 5, 'test_attr_10': 'nice'}
 
-        with recorder.session_scope(hass=self.hass) as session:
-            for event_id in range(5):
-                if event_id < 3:
-                    timestamp = five_days_ago
-                    state = 'purgeme'
-                else:
-                    timestamp = now
-                    state = 'dontpurgeme'
+        for event_id in range(5):
+            if event_id < 3:
+                timestamp = five_days_ago
+                state = 'purgeme'
+            else:
+                timestamp = now
+                state = 'dontpurgeme'
 
-                session.add(States(
-                    entity_id='test.recorder2',
-                    domain='sensor',
-                    state=state,
-                    attributes=json.dumps(attributes),
-                    last_changed=timestamp,
-                    last_updated=timestamp,
-                    created=timestamp,
-                    event_id=event_id + 1000
-                ))
-
-            # if self._add_test_events was called, we added a special event
-            # that should be protected from deletion, too
-            protected_event_id = getattr(self, "_protected_event_id", 2000)
-
-            # add a state that is old but the only state of its entity and
-            # should be protected
             session.add(States(
-                entity_id='test.rarely_updated_entity',
+                entity_id='test.recorder2',
                 domain='sensor',
-                state='iamprotected',
+                state=state,
                 attributes=json.dumps(attributes),
-                last_changed=five_days_ago,
-                last_updated=five_days_ago,
-                created=five_days_ago,
-                event_id=protected_event_id
+                last_changed=timestamp,
+                last_updated=timestamp,
+                created=timestamp,
+                event_id=event_id + 1000
             ))
 
-    def _add_test_events(self):
+        # if self._add_test_events was called, we added a special event
+        # that should be protected from deletion, too
+        protected_event_id = getattr(self, "_protected_event_id", 2000)
+
+        # add a state that is old but the only state of its entity and
+        # should be protected
+        session.add(States(
+            entity_id='test.rarely_updated_entity',
+            domain='sensor',
+            state='iamprotected',
+            attributes=json.dumps(attributes),
+            last_changed=five_days_ago,
+            last_updated=five_days_ago,
+            created=five_days_ago,
+            event_id=protected_event_id
+        ))
+
+
+    def _add_test_events(self, session):
         """Add a few events for testing."""
         now = datetime.now()
         five_days_ago = now - timedelta(days=5)
         event_data = {'test_attr': 5, 'test_attr_10': 'nice'}
 
-        with recorder.session_scope(hass=self.hass) as session:
-            for event_id in range(5):
-                if event_id < 2:
-                    timestamp = five_days_ago
-                    event_type = 'EVENT_TEST_PURGE'
-                else:
-                    timestamp = now
-                    event_type = 'EVENT_TEST'
+        for event_id in range(5):
+            if event_id < 2:
+                timestamp = five_days_ago
+                event_type = 'EVENT_TEST_PURGE'
+            else:
+                timestamp = now
+                event_type = 'EVENT_TEST'
 
-                session.add(Events(
-                    event_type=event_type,
-                    event_data=json.dumps(event_data),
-                    origin='LOCAL',
-                    created=timestamp,
-                    time_fired=timestamp,
-                ))
-
-            # Add an event for the protected state
-            protected_event = Events(
-                event_type='EVENT_TEST_FOR_PROTECTED',
+            session.add(Events(
+                event_type=event_type,
                 event_data=json.dumps(event_data),
                 origin='LOCAL',
-                created=five_days_ago,
-                time_fired=five_days_ago,
-            )
-            session.add(protected_event)
-            session.flush()
+                created=timestamp,
+                time_fired=timestamp,
+            ))
 
-            self._protected_event_id = protected_event.event_id
+        # Add an event for the protected state
+        protected_event = Events(
+            event_type='EVENT_TEST_FOR_PROTECTED',
+            event_data=json.dumps(event_data),
+            origin='LOCAL',
+            created=five_days_ago,
+            time_fired=five_days_ago,
+        )
+        session.add(protected_event)
+        session.flush()
+
+        self._protected_event_id = protected_event.event_id
+
 
     def test_purge_old_states(self):
         """Test deleting old states."""
-        self._add_test_states()
-        # make sure we start with 6 states
         with session_scope(hass=self.hass) as session:
+            # make sure we start with 6 states
+            self._add_test_states(session)
+
             states = session.query(States)
             self.assertEqual(states.count(), 6)
 
@@ -120,9 +121,10 @@ class TestRecorderPurge(unittest.TestCase):
 
     def test_purge_old_events(self):
         """Test deleting old events."""
-        self._add_test_events()
 
         with session_scope(hass=self.hass) as session:
+            self._add_test_events()
+
             events = session.query(Events).filter(
                 Events.event_type.like("EVENT_TEST%"))
             self.assertEqual(events.count(), 6)
@@ -136,11 +138,12 @@ class TestRecorderPurge(unittest.TestCase):
     def test_purge_method(self):
         """Test purge method."""
         service_data = {'keep_days': 4}
-        self._add_test_events()
-        self._add_test_states()
 
-        # make sure we start with 6 states
         with session_scope(hass=self.hass) as session:
+            # make sure we start with 6 states
+            self._add_test_events()
+            self._add_test_states()
+
             states = session.query(States)
             self.assertEqual(states.count(), 6)
 
