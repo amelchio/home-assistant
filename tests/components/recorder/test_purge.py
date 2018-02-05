@@ -31,9 +31,6 @@ class TestRecorderPurge(unittest.TestCase):
         five_days_ago = now - timedelta(days=5)
         attributes = {'test_attr': 5, 'test_attr_10': 'nice'}
 
-        self.hass.block_till_done()
-        self.hass.data[DATA_INSTANCE].block_till_done()
-
         with recorder.session_scope(hass=self.hass) as session:
             for event_id in range(5):
                 if event_id < 3:
@@ -76,9 +73,6 @@ class TestRecorderPurge(unittest.TestCase):
         now = datetime.now()
         five_days_ago = now - timedelta(days=5)
         event_data = {'test_attr': 5, 'test_attr_10': 'nice'}
-
-        self.hass.block_till_done()
-        self.hass.data[DATA_INSTANCE].block_till_done()
 
         with recorder.session_scope(hass=self.hass) as session:
             for event_id in range(5):
