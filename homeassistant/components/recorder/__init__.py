@@ -352,7 +352,6 @@ class Recorder(threading.Thread):
         """Ensure database is ready to fly."""
         from sqlalchemy import create_engine, event
         from sqlalchemy.engine import Engine
-        from sqlalchemy.orm import scoped_session
         from sqlalchemy.orm import sessionmaker
         from sqlite3 import Connection
 
@@ -386,7 +385,7 @@ class Recorder(threading.Thread):
 
         self.engine = create_engine(self.db_url, **kwargs)
         models.Base.metadata.create_all(self.engine)
-        self.get_session = scoped_session(sessionmaker(bind=self.engine))
+        self.get_session = sessionmaker(bind=self.engine)
 
     def _close_connection(self):
         """Close the connection."""
