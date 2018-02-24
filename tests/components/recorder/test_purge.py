@@ -166,7 +166,7 @@ class TestRecorderPurge(unittest.TestCase):
 
             # run purge method - no service data, use defaults
             self.hass.services.call('recorder', 'purge')
-            self.hass.async_block_till_done()
+            self.hass.block_till_done()
 
             # Small wait for recorder thread
             self.hass.data[DATA_INSTANCE].block_till_done()
@@ -178,7 +178,7 @@ class TestRecorderPurge(unittest.TestCase):
             # run purge method - correct service data
             self.hass.services.call('recorder', 'purge',
                                     service_data=service_data)
-            self.hass.async_block_till_done()
+            self.hass.block_till_done()
 
             # Small wait for recorder thread
             self.hass.data[DATA_INSTANCE].block_till_done()
@@ -205,7 +205,7 @@ class TestRecorderPurge(unittest.TestCase):
                 service_data['repack'] = True
                 self.hass.services.call('recorder', 'purge',
                                         service_data=service_data)
-                self.hass.async_block_till_done()
+                self.hass.block_till_done()
                 self.hass.data[DATA_INSTANCE].block_till_done()
                 self.assertEqual(mock_logger.debug.mock_calls[4][1][0],
                                  "Vacuuming SQLite to free space")

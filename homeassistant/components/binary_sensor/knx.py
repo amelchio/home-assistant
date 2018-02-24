@@ -4,7 +4,6 @@ Support for KNX/IP binary sensors.
 For more details about this platform, please refer to the documentation at
 https://home-assistant.io/components/binary_sensor.knx/
 """
-import asyncio
 
 import voluptuous as vol
 
@@ -35,7 +34,7 @@ DEPENDENCIES = ['knx']
 AUTOMATION_SCHEMA = vol.Schema({
     vol.Optional(CONF_HOOK, default=CONF_DEFAULT_HOOK): cv.string,
     vol.Optional(CONF_COUNTER, default=CONF_DEFAULT_COUNTER): cv.port,
-    vol.Required(CONF_ACTION, default=None): cv.SCRIPT_SCHEMA
+    vol.Required(CONF_ACTION): cv.SCRIPT_SCHEMA
 })
 
 AUTOMATIONS_SCHEMA = vol.All(
@@ -49,12 +48,12 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_DEVICE_CLASS): cv.string,
     vol.Optional(CONF_SIGNIFICANT_BIT, default=CONF_DEFAULT_SIGNIFICANT_BIT):
         cv.positive_int,
-    vol.Optional(CONF_AUTOMATION, default=None): AUTOMATIONS_SCHEMA,
+    vol.Optional(CONF_AUTOMATION): AUTOMATIONS_SCHEMA,
 })
 
 
-@asyncio.coroutine
-def async_setup_platform(hass, config, async_add_devices, discovery_info=None):
+async def async_setup_platform(hass, config, async_add_devices,
+                               discovery_info=None):
     """Set up binary sensor(s) for KNX platform."""
     if discovery_info is not None:
         async_add_devices_discovery(hass, discovery_info, async_add_devices)
@@ -111,11 +110,10 @@ class KNXBinarySensor(BinarySensorDevice):
     @callback
     def async_register_callbacks(self):
         """Register callbacks to update hass after device was changed."""
-        @asyncio.coroutine
-        def after_update_callback(device):
+        async def after_update_callback(device):
             """Call after device was updated."""
             # pylint: disable=unused-argument
-            yield from self.async_update_ha_state()
+            await self.async_update_ha_state()
         self.device.register_device_updated_cb(after_update_callback)
 
     @property
