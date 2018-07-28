@@ -14,6 +14,7 @@ import pathlib
 import re
 import sys
 import threading
+import datetime
 from time import monotonic
 
 from types import MappingProxyType
@@ -1147,22 +1148,34 @@ def _async_create_timer(hass):
     """Create a timer that will start on HOMEASSISTANT_START."""
     handle = None
 
-    @callback
-    def fire_time_event(nxt):
-        """Fire next time event."""
+    def _schedule_tick():
+        """Schedule a timer tick when the next second rolls around."""
         nonlocal handle
 
+        slp_seconds = 1 - (dt_util.utcnow().microsecond / 10**6)
+        handle = hass.loop.call_later(
+            slp_seconds, fire_time_event, monotonic(), slp_seconds)
+
+    @callback
+    def fire_time_event(scheduled_monotonic, slp_seconds):
+        """Fire next time event."""
+        overslept = (monotonic() - scheduled_monotonic) - slp_seconds
+        now = dt_util.utcnow()
+
+        if overslept > 3:
+            _LOGGER.error('Timer got %.1f seconds out of sync', overslept)
+
+        for delta in range(int(overslept), 0, -1):
+            missed_ts = (now - datetime.timedelta(seconds=delta))
+            _LOGGER.info('Synthesizing missed timer tick %s', missed_ts)
+
+            hass.bus.async_fire(EVENT_TIME_CHANGED,
+                                {ATTR_NOW: missed_ts})
+
         hass.bus.async_fire(EVENT_TIME_CHANGED,
-                            {ATTR_NOW: dt_util.utcnow()})
-        nxt += 1
-        slp_seconds = nxt - monotonic()
+                            {ATTR_NOW: now})
 
-        if slp_seconds < 0:
-            _LOGGER.error('Timer got out of sync. Resetting')
-            nxt = monotonic() + 1
-            slp_seconds = 1
-
-        handle = hass.loop.call_later(slp_seconds, fire_time_event, nxt)
+        _schedule_tick()
 
     @callback
     def stop_timer(event):
@@ -1173,4 +1186,4 @@ def _async_create_timer(hass):
     hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, stop_timer)
 
     _LOGGER.info("Timer:starting")
-    fire_time_event(monotonic())
+    _schedule_tick()
