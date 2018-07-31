@@ -11,8 +11,7 @@ import functools as ft
 import logging
 
 from homeassistant.core import callback as async_callback
-from homeassistant.const import EVENT_TIME_CHANGED, ATTR_FRIENDLY_NAME, \
-    ATTR_ENTITY_PICTURE
+from homeassistant.const import ATTR_FRIENDLY_NAME, ATTR_ENTITY_PICTURE
 from homeassistant.loader import bind_hass
 from homeassistant.helpers.entity import async_generate_entity_id
 from homeassistant.util.async_ import run_callback_threadsafe
@@ -205,7 +204,7 @@ class Configurator:
             """Remove the request state."""
             self.hass.states.async_remove(entity_id)
 
-        self.hass.bus.async_listen_once(EVENT_TIME_CHANGED, deferred_remove)
+        self.hass.helpers.event.async_call_later(1, deferred_remove)
 
     @asyncio.coroutine
     def async_handle_service_call(self, call):
