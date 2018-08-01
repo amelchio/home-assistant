@@ -24,9 +24,9 @@ from homeassistant.util.unit_system import METRIC_SYSTEM
 import homeassistant.util.dt as date_util
 import homeassistant.util.yaml as yaml
 from homeassistant.const import (
-    STATE_ON, STATE_OFF, DEVICE_DEFAULT_NAME, EVENT_TIME_CHANGED,
-    EVENT_STATE_CHANGED, EVENT_PLATFORM_DISCOVERED, ATTR_SERVICE,
-    ATTR_DISCOVERED, SERVER_PORT, EVENT_HOMEASSISTANT_CLOSE)
+    STATE_ON, STATE_OFF, DEVICE_DEFAULT_NAME, EVENT_STATE_CHANGED,
+    EVENT_PLATFORM_DISCOVERED, ATTR_SERVICE, ATTR_DISCOVERED,
+    SERVER_PORT, EVENT_HOMEASSISTANT_CLOSE)
 from homeassistant.components import mqtt, recorder
 from homeassistant.util.async_ import (
     run_callback_threadsafe, run_coroutine_threadsafe)
@@ -154,8 +154,7 @@ def async_test_home_assistant(loop):
     def mock_async_start():
         """Start the mocking."""
         # We only mock time during tests and we want to track tasks
-        with patch('homeassistant.core._async_create_timer'), \
-                patch.object(hass, 'async_stop_track_tasks'):
+        with patch.object(hass, 'async_stop_track_tasks'):
             yield from orig_start()
 
     hass.async_start = mock_async_start
@@ -235,7 +234,6 @@ fire_mqtt_message = threadsafe_callback_factory(async_fire_mqtt_message)
 @ha.callback
 def async_fire_time_changed(hass, time):
     """Fire a time changes event."""
-    hass.bus.async_fire(EVENT_TIME_CHANGED, {'now': time})
 
 
 fire_time_changed = threadsafe_callback_factory(async_fire_time_changed)

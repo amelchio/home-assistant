@@ -523,7 +523,7 @@ class TestEventHelpers(unittest.TestCase):
 
     def _send_time_changed(self, now):
         """Send a time changed event."""
-        self.hass.bus.fire(ha.EVENT_TIME_CHANGED, {ha.ATTR_NOW: now})
+        pass
 
     def test_periodic_task_minute(self):
         """Test periodic tasks per minute."""

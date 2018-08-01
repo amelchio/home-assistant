@@ -2,7 +2,7 @@
 
 This includes tests for all mock object types.
 """
-from datetime import datetime, timedelta
+from datetime import datetime
 from unittest.mock import patch, Mock
 
 import pytest
@@ -14,8 +14,7 @@ from homeassistant.components.homekit.const import (
     CHAR_MANUFACTURER, CHAR_MODEL, CHAR_NAME, CHAR_SERIAL_NUMBER,
     MANUFACTURER, SERV_ACCESSORY_INFO)
 from homeassistant.const import (
-    __version__, ATTR_BATTERY_CHARGING, ATTR_BATTERY_LEVEL, ATTR_NOW,
-    EVENT_TIME_CHANGED)
+    __version__, ATTR_BATTERY_CHARGING, ATTR_BATTERY_LEVEL)
 import homeassistant.util.dt as dt_util
 
 
@@ -36,8 +35,6 @@ async def test_debounce(hass):
 
     with patch('homeassistant.util.dt.utcnow', return_value=now):
         await hass.async_add_job(debounce_demo, mock, 'value')
-    hass.bus.async_fire(
-        EVENT_TIME_CHANGED, {ATTR_NOW: now + timedelta(seconds=3)})
     await hass.async_block_till_done()
     assert counter == 1
     assert len(arguments) == 2
@@ -46,8 +43,6 @@ async def test_debounce(hass):
         await hass.async_add_job(debounce_demo, mock, 'value')
         await hass.async_add_job(debounce_demo, mock, 'value')
 
-    hass.bus.async_fire(
-        EVENT_TIME_CHANGED, {ATTR_NOW: now + timedelta(seconds=3)})
     await hass.async_block_till_done()
     assert counter == 2
 

@@ -4,11 +4,10 @@ import asyncio
 import logging
 import os
 import unittest
-from unittest.mock import patch, MagicMock, sentinel
+from unittest.mock import patch, MagicMock
 from datetime import datetime, timedelta
 from tempfile import TemporaryDirectory
 
-import pytz
 import pytest
 
 import homeassistant.core as ha
@@ -19,12 +18,10 @@ import homeassistant.util.dt as dt_util
 from homeassistant.util.unit_system import (METRIC_SYSTEM)
 from homeassistant.const import (
     __version__, EVENT_STATE_CHANGED, ATTR_FRIENDLY_NAME, CONF_UNIT_SYSTEM,
-    ATTR_NOW, EVENT_TIME_CHANGED, EVENT_HOMEASSISTANT_STOP,
-    EVENT_HOMEASSISTANT_CLOSE, EVENT_SERVICE_REGISTERED, EVENT_SERVICE_REMOVED)
+    EVENT_HOMEASSISTANT_STOP, EVENT_HOMEASSISTANT_CLOSE,
+    EVENT_SERVICE_REGISTERED, EVENT_SERVICE_REMOVED)
 
 from tests.common import get_test_home_assistant
-
-PST = pytz.timezone('America/Los_Angeles')
 
 
 def test_split_entity_id():
@@ -845,93 +842,6 @@ class TestConfig(unittest.TestCase):
                 self.config.is_allowed_path(None)
 
 
-@patch('homeassistant.core.monotonic')
-def test_create_timer(mock_monotonic, loop):
-    """Test create timer."""
-    hass = MagicMock()
-    funcs = []
-    orig_callback = ha.callback
-
-    def mock_callback(func):
-        funcs.append(func)
-        return orig_callback(func)
-
-    mock_monotonic.side_effect = 10.2, 10.3
-
-    with patch.object(ha, 'callback', mock_callback), \
-            patch('homeassistant.core.dt_util.utcnow',
-                  return_value=sentinel.mock_date):
-        ha._async_create_timer(hass)
-
-        assert len(funcs) == 2
-        fire_time_event, stop_timer = funcs
-
-    assert len(hass.bus.async_listen_once.mock_calls) == 1
-    assert len(hass.bus.async_fire.mock_calls) == 1
-    assert len(hass.loop.call_later.mock_calls) == 1
-
-    event_type, callback = hass.bus.async_listen_once.mock_calls[0][1]
-    assert event_type == EVENT_HOMEASSISTANT_STOP
-    assert callback is stop_timer
-
-    slp_seconds, callback, nxt = hass.loop.call_later.mock_calls[0][1]
-    assert abs(slp_seconds - 0.9) < 0.001
-    assert callback is fire_time_event
-    assert abs(nxt - 11.2) < 0.001
-
-    event_type, event_data = hass.bus.async_fire.mock_calls[0][1]
-    assert event_type == EVENT_TIME_CHANGED
-    assert event_data[ATTR_NOW] is sentinel.mock_date
-
-
-@patch('homeassistant.core.monotonic')
-def test_timer_out_of_sync(mock_monotonic, loop):
-    """Test create timer."""
-    hass = MagicMock()
-    funcs = []
-    orig_callback = ha.callback
-
-    def mock_callback(func):
-        funcs.append(func)
-        return orig_callback(func)
-
-    mock_monotonic.side_effect = 10.2, 11.3, 11.3
-
-    with patch.object(ha, 'callback', mock_callback), \
-            patch('homeassistant.core.dt_util.utcnow',
-                  return_value=sentinel.mock_date):
-        ha._async_create_timer(hass)
-
-        assert len(funcs) == 2
-        fire_time_event, stop_timer = funcs
-
-    assert len(hass.loop.call_later.mock_calls) == 1
-
-    slp_seconds, callback, nxt = hass.loop.call_later.mock_calls[0][1]
-    assert slp_seconds == 1
-    assert callback is fire_time_event
-    assert abs(nxt - 12.3) < 0.001
-
-
-@asyncio.coroutine
-def test_hass_start_starts_the_timer(loop):
-    """Test when hass starts, it starts the timer."""
-    hass = ha.HomeAssistant(loop=loop)
-
-    try:
-        with patch('homeassistant.core._async_create_timer') as mock_timer:
-            yield from hass.async_start()
-
-        assert hass.state == ha.CoreState.running
-        assert not hass._track_task
-        assert len(mock_timer.mock_calls) == 1
-        assert mock_timer.mock_calls[0][1][0] is hass
-
-    finally:
-        yield from hass.async_stop()
-        assert hass.state == ha.CoreState.not_running
-
-
 @asyncio.coroutine
 def test_start_taking_too_long(loop, caplog):
     """Test when async_start takes too long."""
@@ -940,13 +850,10 @@ def test_start_taking_too_long(loop, caplog):
 
     try:
         with patch('homeassistant.core.timeout',
-                   side_effect=asyncio.TimeoutError), \
-             patch('homeassistant.core._async_create_timer') as mock_timer:
+                   side_effect=asyncio.TimeoutError):
             yield from hass.async_start()
 
         assert hass.state == ha.CoreState.running
-        assert len(mock_timer.mock_calls) == 1
-        assert mock_timer.mock_calls[0][1][0] is hass
         assert 'Something is blocking Home Assistant' in caplog.text
 
     finally:

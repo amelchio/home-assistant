@@ -2,14 +2,11 @@
 import argparse
 import asyncio
 from contextlib import suppress
-from datetime import datetime
 import logging
 from timeit import default_timer as timer
 
 from homeassistant import core
-from homeassistant.const import (
-    ATTR_NOW, EVENT_STATE_CHANGED, EVENT_TIME_CHANGED)
-from homeassistant.util import dt as dt_util
+from homeassistant.const import EVENT_STATE_CHANGED
 
 BENCHMARKS = {}
 
@@ -69,37 +66,6 @@ async def async_million_events(hass):
 
     for _ in range(10**6):
         hass.bus.async_fire(event_name)
-
-    start = timer()
-
-    await event.wait()
-
-    return timer() - start
-
-
-@benchmark
-# pylint: disable=invalid-name
-async def async_million_time_changed_helper(hass):
-    """Run a million events through time changed helper."""
-    count = 0
-    event = asyncio.Event(loop=hass.loop)
-
-    @core.callback
-    def listener(_):
-        """Handle event."""
-        nonlocal count
-        count += 1
-
-        if count == 10**6:
-            event.set()
-
-    hass.helpers.event.async_track_time_change(listener, minute=0, second=0)
-    event_data = {
-        ATTR_NOW: datetime(2017, 10, 10, 15, 0, 0, tzinfo=dt_util.UTC)
-    }
-
-    for _ in range(10**6):
-        hass.bus.async_fire(EVENT_TIME_CHANGED, event_data)
 
     start = timer()
 

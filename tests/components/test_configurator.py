@@ -3,7 +3,7 @@
 import unittest
 
 import homeassistant.components.configurator as configurator
-from homeassistant.const import EVENT_TIME_CHANGED, ATTR_FRIENDLY_NAME
+from homeassistant.const import ATTR_FRIENDLY_NAME
 
 from tests.common import get_test_home_assistant
 
@@ -107,7 +107,6 @@ class TestConfigurator(unittest.TestCase):
         configurator.request_done(self.hass, request_id)
         self.assertEqual(1, len(self.hass.states.all()))
 
-        self.hass.bus.fire(EVENT_TIME_CHANGED)
         self.hass.block_till_done()
         self.assertEqual(0, len(self.hass.states.all()))
 
