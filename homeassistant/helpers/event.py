@@ -5,8 +5,7 @@ import functools as ft
 from homeassistant.loader import bind_hass
 from homeassistant.helpers.sun import get_astral_event_next
 from ..core import HomeAssistant, callback
-from ..const import (
-    ATTR_NOW, EVENT_STATE_CHANGED, EVENT_TIME_CHANGED, MATCH_ALL)
+from ..const import EVENT_STATE_CHANGED, MATCH_ALL
 from ..util import dt as dt_util
 from ..util.async_ import run_callback_threadsafe
 
@@ -327,24 +326,34 @@ def async_track_utc_time_change(hass, action, year=None, month=None, day=None,
     # We do not have to wrap the function with time pattern matching logic
     # if no pattern given
     if all(val is None for val in (year, month, day, hour, minute, second)):
-        @callback
-        def time_change_listener(event):
-            """Fire every time event that comes in."""
-            hass.async_run_job(action, event.data[ATTR_NOW])
+        return async_track_time_interval(hass, action, 1)
 
-        return hass.bus.async_listen(EVENT_TIME_CHANGED, time_change_listener)
+    delta = timedelta(seconds=1)
 
     pmp = _process_time_match
     year, month, day = pmp(year), pmp(month), pmp(day)
     hour, minute, second = pmp(hour), pmp(minute), pmp(second)
 
+    handle = None
+
     @callback
-    def pattern_time_change_listener(event):
-        """Listen for matching time_changed events."""
-        now = event.data[ATTR_NOW]
+    def clear_timer():
+        """Cancel timer that did not yet fire."""
+        nonlocal handle
+
+        if handle is not None:
+            handle()
+            handle = None
+
+    @callback
+    def pattern_time_change_listener(tick):
+        """Listen for matching time changes."""
+        nonlocal handle
 
         if local:
-            now = dt_util.as_local(now)
+            now = dt_util.as_local(tick)
+        else:
+            now = tick
 
         # pylint: disable=too-many-boolean-expressions
         if second(now.second) and minute(now.minute) and hour(now.hour) and \
@@ -352,8 +361,18 @@ def async_track_utc_time_change(hass, action, year=None, month=None, day=None,
 
             hass.async_run_job(action, now)
 
-    return hass.bus.async_listen(EVENT_TIME_CHANGED,
-                                 pattern_time_change_listener)
+        handle = async_track_point_in_utc_time(
+            hass,
+            pattern_time_change_listener,
+            tick + delta)
+
+    first_tick = dt_util.utcnow().replace(microsecond=0)
+    handle = async_track_point_in_utc_time(
+        hass,
+        pattern_time_change_listener,
+        first_tick)
+
+    return clear_timer
 
 
 track_utc_time_change = threaded_listener_factory(async_track_utc_time_change)
