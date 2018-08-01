@@ -188,31 +188,30 @@ track_point_in_time = threaded_listener_factory(async_track_point_in_time)
 @bind_hass
 def async_track_point_in_utc_time(hass, action, point_in_time):
     """Add a listener that fires once after a specific point in UTC time."""
-    # Ensure point_in_time is UTC
-    point_in_time = dt_util.as_utc(point_in_time)
+    handle = None
 
     @callback
-    def point_in_time_listener(event):
-        """Listen for matching time_changed events."""
-        now = event.data[ATTR_NOW]
+    def clear_timer():
+        """Cancel timer that did not yet fire."""
+        nonlocal handle
 
-        if now < point_in_time or hasattr(point_in_time_listener, 'run'):
-            return
+        if handle is not None:
+            handle.cancel()
+            handle = None
 
-        # Set variable so that we will never run twice.
-        # Because the event bus might have to wait till a thread comes
-        # available to execute this listener it might occur that the
-        # listener gets lined up twice to be executed. This will make
-        # sure the second time it does nothing.
-        point_in_time_listener.run = True
-        async_unsub()
+    @callback
+    def run_action():
+        """Run the action when the timer has fired."""
+        nonlocal handle
 
-        hass.async_run_job(action, now)
+        hass.async_run_job(action, point_in_time)
 
-    async_unsub = hass.bus.async_listen(EVENT_TIME_CHANGED,
-                                        point_in_time_listener)
+        handle = None
 
-    return async_unsub
+    delay = dt_util.as_utc(point_in_time) - dt_util.utcnow()
+    handle = hass.loop.call_later(delay.total_seconds(), run_action)
+
+    return clear_timer
 
 
 track_point_in_utc_time = threaded_listener_factory(
