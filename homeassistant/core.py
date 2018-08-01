@@ -14,7 +14,6 @@ import pathlib
 import re
 import sys
 import threading
-from time import monotonic
 import uuid
 
 from types import MappingProxyType
@@ -29,12 +28,11 @@ import voluptuous as vol
 from voluptuous.humanize import humanize_error
 
 from homeassistant.const import (
-    ATTR_DOMAIN, ATTR_FRIENDLY_NAME, ATTR_NOW, ATTR_SERVICE,
+    ATTR_DOMAIN, ATTR_FRIENDLY_NAME, ATTR_SERVICE,
     ATTR_SERVICE_DATA, EVENT_CALL_SERVICE,
     EVENT_HOMEASSISTANT_START, EVENT_HOMEASSISTANT_STOP,
     EVENT_SERVICE_EXECUTED, EVENT_SERVICE_REGISTERED, EVENT_STATE_CHANGED,
-    EVENT_TIME_CHANGED, MATCH_ALL, EVENT_HOMEASSISTANT_CLOSE,
-    EVENT_SERVICE_REMOVED, __version__)
+    MATCH_ALL, EVENT_HOMEASSISTANT_CLOSE, EVENT_SERVICE_REMOVED, __version__)
 from homeassistant import loader
 from homeassistant.exceptions import (
     HomeAssistantError, InvalidEntityFormatError, InvalidStateError)
@@ -205,7 +203,6 @@ class HomeAssistant:
         # Allow automations to set up the start triggers before changing state
         await asyncio.sleep(0)
         self.state = CoreState.running
-        _async_create_timer(self)
 
     def add_job(self, target: Callable[..., None], *args: Any) -> None:
         """Add job to the executor pool.
@@ -475,8 +472,7 @@ class EventBus:
 
         event = Event(event_type, event_data, origin, None, context)
 
-        if event_type != EVENT_TIME_CHANGED:
-            _LOGGER.info("Bus:Handling %s", event)
+        _LOGGER.info("Bus:Handling %s", event)
 
         if not listeners:
             return
@@ -1213,36 +1209,3 @@ class Config:
             'whitelist_external_dirs': self.whitelist_external_dirs,
             'version': __version__
         }
-
-
-def _async_create_timer(hass: HomeAssistant) -> None:
-    """Create a timer that will start on HOMEASSISTANT_START."""
-    handle = None
-
-    @callback
-    def fire_time_event(nxt: float) -> None:
-        """Fire next time event."""
-        nonlocal handle
-
-        hass.bus.async_fire(EVENT_TIME_CHANGED,
-                            {ATTR_NOW: dt_util.utcnow()})
-        nxt += 1
-        slp_seconds = nxt - monotonic()
-
-        if slp_seconds < 0:
-            _LOGGER.error('Timer got out of sync. Resetting')
-            nxt = monotonic() + 1
-            slp_seconds = 1
-
-        handle = hass.loop.call_later(slp_seconds, fire_time_event, nxt)
-
-    @callback
-    def stop_timer(_: Event) -> None:
-        """Stop the timer."""
-        if handle is not None:
-            handle.cancel()
-
-    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, stop_timer)
-
-    _LOGGER.info("Timer:starting")
-    fire_time_event(monotonic())
