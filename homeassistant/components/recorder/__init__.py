@@ -23,7 +23,7 @@ import voluptuous as vol
 from homeassistant.const import (
     ATTR_ENTITY_ID, CONF_DOMAINS, CONF_ENTITIES, CONF_EXCLUDE, CONF_INCLUDE,
     EVENT_HOMEASSISTANT_START, EVENT_HOMEASSISTANT_STOP, EVENT_STATE_CHANGED,
-    EVENT_TIME_CHANGED, MATCH_ALL)
+    MATCH_ALL)
 from homeassistant.core import CoreState, HomeAssistant, callback
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.entityfilter import generate_filter
@@ -286,9 +286,6 @@ class Recorder(threading.Thread):
                 return
             if isinstance(event, PurgeTask):
                 purge.purge_old_data(self, event.keep_days, event.repack)
-                self.queue.task_done()
-                continue
-            elif event.event_type == EVENT_TIME_CHANGED:
                 self.queue.task_done()
                 continue
             elif event.event_type in self.exclude_t:

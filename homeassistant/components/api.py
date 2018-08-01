@@ -14,9 +14,9 @@ import async_timeout
 from homeassistant.bootstrap import DATA_LOGGING
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.const import (
-    EVENT_HOMEASSISTANT_STOP, EVENT_TIME_CHANGED, HTTP_BAD_REQUEST,
-    HTTP_CREATED, HTTP_NOT_FOUND, MATCH_ALL, URL_API, URL_API_COMPONENTS,
-    URL_API_CONFIG, URL_API_DISCOVERY_INFO, URL_API_ERROR_LOG, URL_API_EVENTS,
+    EVENT_HOMEASSISTANT_STOP, HTTP_BAD_REQUEST, HTTP_CREATED, HTTP_NOT_FOUND,
+    MATCH_ALL, URL_API, URL_API_COMPONENTS, URL_API_CONFIG,
+    URL_API_DISCOVERY_INFO, URL_API_ERROR_LOG, URL_API_EVENTS,
     URL_API_SERVICES, URL_API_STATES, URL_API_STATES_ENTITY, URL_API_STREAM,
     URL_API_TEMPLATE, __version__)
 import homeassistant.core as ha
@@ -91,9 +91,6 @@ class APIEventStream(HomeAssistantView):
 
         async def forward_events(event):
             """Forward events to the open request."""
-            if event.event_type == EVENT_TIME_CHANGED:
-                return
-
             if restrict and event.event_type not in restrict:
                 return
 

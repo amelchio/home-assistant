@@ -14,7 +14,7 @@ from homeassistant.components.mqtt import (
     valid_publish_topic, valid_subscribe_topic)
 from homeassistant.const import (
     ATTR_SERVICE_DATA, EVENT_CALL_SERVICE, EVENT_SERVICE_EXECUTED,
-    EVENT_STATE_CHANGED, EVENT_TIME_CHANGED, MATCH_ALL)
+    EVENT_STATE_CHANGED, MATCH_ALL)
 from homeassistant.core import EventOrigin, State
 import homeassistant.helpers.config_validation as cv
 from homeassistant.remote import JSONEncoder
@@ -51,8 +51,6 @@ def async_setup(hass, config):
     def _event_publisher(event):
         """Handle events by publishing them on the MQTT queue."""
         if event.origin != EventOrigin.local:
-            return
-        if event.event_type == EVENT_TIME_CHANGED:
             return
 
         # User-defined events to ignore

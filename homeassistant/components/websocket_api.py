@@ -16,8 +16,7 @@ import voluptuous as vol
 from voluptuous.humanize import humanize_error
 
 from homeassistant.const import (
-    MATCH_ALL, EVENT_TIME_CHANGED, EVENT_HOMEASSISTANT_STOP,
-    __version__)
+    MATCH_ALL, EVENT_HOMEASSISTANT_STOP, __version__)
 from homeassistant.core import Context, callback
 from homeassistant.loader import bind_hass
 from homeassistant.remote import JSONEncoder
@@ -484,9 +483,6 @@ def handle_subscribe_events(hass, connection, msg):
     """
     async def forward_events(event):
         """Forward events to websocket."""
-        if event.event_type == EVENT_TIME_CHANGED:
-            return
-
         connection.send_message_outside(event_message(msg['id'], event))
 
     connection.event_listeners[msg['id']] = hass.bus.async_listen(
