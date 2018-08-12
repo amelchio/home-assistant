@@ -328,17 +328,6 @@ def async_track_utc_time_change(hass, action, year=None, month=None, day=None,
     if all(val is None for val in (year, month, day, hour, minute, second)):
         return async_track_time_interval(hass, action, 1)
 
-    # Skip per-second checks for some common patterns
-    # Stepping more than one hour is tricky due to daylight savings time
-    if _time_pattern_singular(second):
-        if _time_pattern_singular(minute):
-            max_delta = timedelta(hours=1)
-        else:
-            max_delta = timedelta(minutes=1)
-    else:
-        max_delta = timedelta(seconds=1)
-
-    # Check each second until we are synced for max_delta
     delta = timedelta(seconds=1)
 
     pmp = _process_time_match
@@ -359,7 +348,7 @@ def async_track_utc_time_change(hass, action, year=None, month=None, day=None,
     @callback
     def pattern_time_change_listener(tick):
         """Listen for matching time changes."""
-        nonlocal handle, delta
+        nonlocal handle
 
         if local:
             now = dt_util.as_local(tick)
@@ -369,9 +358,6 @@ def async_track_utc_time_change(hass, action, year=None, month=None, day=None,
         # pylint: disable=too-many-boolean-expressions
         if second(now.second) and minute(now.minute) and hour(now.hour) and \
            day(now.day) and month(now.month) and year(now.year):
-
-            # We are synced, now sleep longer
-            delta = max_delta
 
             hass.async_run_job(action, now)
 
@@ -430,17 +416,3 @@ def _process_time_match(parameter):
 
     parameter = tuple(parameter)
     return lambda time: time in parameter
-
-
-def _time_pattern_singular(parameter):
-    """Return true if the parameter only matches one number."""
-    if parameter is None or parameter == MATCH_ALL:
-        return False
-
-    if isinstance(parameter, str) and parameter.startswith('/'):
-        return False
-
-    if isinstance(parameter, str) or not hasattr(parameter, '__iter__'):
-        return True
-
-    return False
