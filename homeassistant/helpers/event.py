@@ -9,6 +9,8 @@ from ..const import EVENT_STATE_CHANGED, MATCH_ALL
 from ..util import dt as dt_util
 from ..util.async_ import run_callback_threadsafe
 
+CLOCK_SKEW_THRESHOLD = 5
+
 # PyLint does not like the use of threaded_listener_factory
 # pylint: disable=invalid-name
 
@@ -328,8 +330,6 @@ def async_track_utc_time_change(hass, action, year=None, month=None, day=None,
     if all(val is None for val in (year, month, day, hour, minute, second)):
         return async_track_time_interval(hass, action, 1)
 
-    delta = timedelta(seconds=1)
-
     pmp = _process_time_match
     year, month, day = pmp(year), pmp(month), pmp(day)
     hour, minute, second = pmp(hour), pmp(minute), pmp(second)
@@ -361,10 +361,16 @@ def async_track_utc_time_change(hass, action, year=None, month=None, day=None,
 
             hass.async_run_job(action, now)
 
+        utcnow = dt_util.utcnow()
+        if (utcnow - tick).total_seconds() > CLOCK_SKEW_THRESHOLD:
+            next_tick = utcnow.replace(microsecond=0) + timedelta(seconds=1)
+        else:
+            next_tick = tick + timedelta(seconds=1)
+
         handle = async_track_point_in_utc_time(
             hass,
             pattern_time_change_listener,
-            tick + delta)
+            next_tick)
 
     first_tick = dt_util.utcnow().replace(microsecond=0)
     handle = async_track_point_in_utc_time(
