@@ -20,10 +20,28 @@ DEPENDENCIES = ['netgear_lte']
 SENSOR_SMS = 'sms'
 SENSOR_USAGE = 'usage'
 
+SENSOR_UNITS = {
+    SENSOR_SMS: 'unread',
+    SENSOR_USAGE: 'MiB',
+    'radio_quality': '%',
+    'rx_level': 'level',
+    'tx_level': 'level',
+    'upstream': None,
+    'connection': None,
+    'connection_text': None,
+    'connection_type': None,
+    'current_nw_service_type': None,
+    'current_ps_service_type': None,
+    'register_network_display': None,
+    'roaming': None,
+    'current_band': None,
+    'cell_id': None,
+}
+
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_HOST): cv.string,
     vol.Required(CONF_SENSORS): vol.All(
-        cv.ensure_list, [vol.In([SENSOR_SMS, SENSOR_USAGE])])
+        cv.ensure_list, [vol.In(SENSOR_UNITS.keys())])
 })
 
 
@@ -41,6 +59,8 @@ async def async_setup_platform(
             sensors.append(SMSSensor(modem_data, sensor_type))
         elif sensor_type == SENSOR_USAGE:
             sensors.append(UsageSensor(modem_data, sensor_type))
+        else:
+            sensors.append(InformationSensor(modem_data, sensor_type))
 
     async_add_entities(sensors, True)
 
@@ -51,6 +71,16 @@ class LTESensor(Entity):
 
     modem_data = attr.ib()
     sensor_type = attr.ib()
+
+    @property
+    def name(self):
+        """Return the name of the sensor."""
+        return "Netgear LTE {}".format(self.sensor_type)
+
+    @property
+    def unit_of_measurement(self):
+        """Return the unit of measurement."""
+        return SENSOR_UNITS[self.sensor_type]
 
     async def async_update(self):
         """Update state."""
@@ -66,11 +96,6 @@ class SMSSensor(LTESensor):
     """Unread SMS sensor entity."""
 
     @property
-    def name(self):
-        """Return the name of the sensor."""
-        return "Netgear LTE SMS"
-
-    @property
     def state(self):
         """Return the state of the sensor."""
         return self.modem_data.unread_count
@@ -80,19 +105,21 @@ class UsageSensor(LTESensor):
     """Data usage sensor entity."""
 
     @property
-    def unit_of_measurement(self):
-        """Return the unit of measurement."""
-        return "MiB"
+    def state(self):
+        """Return the state of the sensor."""
+        if self.modem_data.information is None:
+            return None
 
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return "Netgear LTE usage"
+        return round(self.modem_data.information.usage / 1024**2, 1)
+
+
+class InformationSensor(LTESensor):
+    """Miscellaneous sensor entity."""
 
     @property
     def state(self):
         """Return the state of the sensor."""
-        if self.modem_data.usage is None:
+        if self.modem_data.information is None:
             return None
 
-        return round(self.modem_data.usage / 1024**2, 1)
+        return getattr(self.modem_data.information, self.sensor_type)

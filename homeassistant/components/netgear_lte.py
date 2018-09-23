@@ -43,7 +43,7 @@ class ModemData:
 
     serial_number = attr.ib(init=False, default=None)
     unread_count = attr.ib(init=False, default=None)
-    usage = attr.ib(init=False, default=None)
+    information = attr.ib(init=False, default=None)
 
     @Throttle(MIN_TIME_BETWEEN_UPDATES)
     async def async_update(self):
@@ -53,10 +53,10 @@ class ModemData:
             information = await self.modem.information()
             self.serial_number = information.serial_number
             self.unread_count = sum(1 for x in information.sms if x.unread)
-            self.usage = information.usage
+            self.information = information
         except eternalegypt.Error:
             self.unread_count = None
-            self.usage = None
+            self.information = None
 
 
 @attr.s
