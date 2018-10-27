@@ -114,7 +114,8 @@ class EntityPlatform:
         hass = self.hass
         full_name = '{}.{}'.format(self.domain, self.platform_name)
 
-        logger.info("Setting up %s", full_name)
+        if tries == 0:
+            logger.info("Setting up %s", full_name)
         warn_task = hass.loop.call_later(
             SLOW_SETUP_WARNING, logger.warning,
             "Setup of platform %s is taking over %s seconds.",
@@ -139,11 +140,12 @@ class EntityPlatform:
             hass.config.components.add(full_name)
             return True
         except PlatformNotReady:
+            if tries == 0:
+                logger.warning(
+                    'Platform %s not ready yet. Will keep trying.',
+                    self.platform_name)
             tries += 1
             wait_time = min(tries, 6) * 30
-            logger.warning(
-                'Platform %s not ready yet. Retrying in %d seconds.',
-                self.platform_name, wait_time)
 
             async def setup_again(now):
                 """Run setup again."""

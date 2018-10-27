@@ -247,12 +247,13 @@ class ConfigEntry:
                               component.DOMAIN)
                 result = False
         except ConfigEntryNotReady:
+            if tries == 0:
+                _LOGGER.warning(
+                    'Config entry for %s not ready yet. Will keep trying.',
+                    self.domain)
             self.state = ENTRY_STATE_SETUP_RETRY
             wait_time = 2**min(tries, 4) * 5
             tries += 1
-            _LOGGER.warning(
-                'Config entry for %s not ready yet. Retrying in %d seconds.',
-                self.domain, wait_time)
 
             async def setup_again(now):
                 """Run setup again."""
