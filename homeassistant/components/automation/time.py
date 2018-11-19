@@ -35,8 +35,8 @@ async def async_trigger(hass, config, action, automation_info):
         hours, minutes, seconds = at_time.hour, at_time.minute, at_time.second
     else:
         hours = config.get(CONF_HOURS)
-        minutes = config.get(CONF_MINUTES)
-        seconds = config.get(CONF_SECONDS)
+        minutes = config.get(CONF_MINUTES, None if hours is None else 0)
+        seconds = config.get(CONF_SECONDS, 0)
 
     @callback
     def time_automation_listener(now):
