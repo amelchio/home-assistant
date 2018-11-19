@@ -10,18 +10,18 @@ import voluptuous as vol
 
 from homeassistant.components.notify import (
     ATTR_TITLE, ATTR_TITLE_DEFAULT, ATTR_TARGET, ATTR_DATA,
-    BaseNotificationService)
+    BaseNotificationService, PLATFORM_SCHEMA)
 from homeassistant.const import CONF_API_KEY
 import homeassistant.helpers.config_validation as cv
 
-REQUIREMENTS = ['https://github.com/amelchio/python-pushover/archive/'
-                'local-token.zip#python-pushover==0.5']
+REQUIREMENTS = ['https://github.com/Thibauth/python-pushover/archive/'
+                'master.zip#python-pushover==0.5']
 _LOGGER = logging.getLogger(__name__)
 
 
 CONF_USER_KEY = 'user_key'
 
-PLATFORM_SCHEMA = cv.PLATFORM_SCHEMA.extend({
+PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_USER_KEY): cv.string,
     vol.Required(CONF_API_KEY): cv.string,
 })
@@ -38,8 +38,9 @@ class PushoverNotificationService(BaseNotificationService):
 
     def __init__(self, user_key, api_token):
         """Initialize the service."""
-        from pushover import Client
-        self.pushover = Client(user_key, api_token=api_token)
+        from pushover import Pushover
+        self.user_key = user_key
+        self.pushover = Pushover(api_token)
 
     def send_message(self, message='', **kwargs):
         """Send a message to a user."""
@@ -60,8 +61,6 @@ class PushoverNotificationService(BaseNotificationService):
                 data['device'] = target
 
             try:
-                self.pushover.send_message(message, **data)
-            except ValueError as val_err:
-                _LOGGER.error(str(val_err))
-            except RequestError:
-                _LOGGER.exception("Could not send pushover notification")
+                self.pushover.send_message(self.user_key, message, **data)
+            except (RequestError, ValueError) as ex:
+                _LOGGER.error("Could not send notification: %s", str(ex))
