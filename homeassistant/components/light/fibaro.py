@@ -6,7 +6,7 @@ https://home-assistant.io/components/light.fibaro/
 """
 
 import logging
-import threading
+import asyncio
 
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS, ATTR_HS_COLOR, ATTR_WHITE_VALUE, ENTITY_ID_FORMAT,
@@ -58,7 +58,7 @@ class FibaroLight(FibaroDevice, Light):
         self._brightness = None
         self._white = 0
 
-        self._update_lock = threading.RLock()
+        self._update_lock = asyncio.Lock()
         if 'levelChange' in fibaro_device.interfaces:
             self._supported_flags |= SUPPORT_BRIGHTNESS
         if 'color' in fibaro_device.properties:
@@ -88,45 +88,49 @@ class FibaroLight(FibaroDevice, Light):
         """Flag supported features."""
         return self._supported_flags
 
-    def turn_on(self, **kwargs):
+    async def async_turn_on(self, **kwargs):
         """Turn the light on."""
         with self._update_lock:
-            if self._supported_flags & SUPPORT_BRIGHTNESS:
-                target_brightness = kwargs.get(ATTR_BRIGHTNESS)
+            await self.hass.async_add_executor_job(self._turn_on, **kwargs)
 
-                # No brightness specified, so we either restore it to
-                # last brightness or switch it on at maximum level
-                if target_brightness is None:
-                    if self._brightness == 0:
-                        if self._last_brightness:
-                            self._brightness = self._last_brightness
-                        else:
-                            self._brightness = 100
-                else:
-                    # We set it to the target brightness and turn it on
-                    self._brightness = scaleto100(target_brightness)
+    def _turn_on(self, **kwargs):
+        """Really turn the light on."""
+        if self._supported_flags & SUPPORT_BRIGHTNESS:
+            target_brightness = kwargs.get(ATTR_BRIGHTNESS)
 
-            if self._supported_flags & SUPPORT_COLOR:
-                # Update based on parameters
-                self._white = kwargs.get(ATTR_WHITE_VALUE, self._white)
-                self._color = kwargs.get(ATTR_HS_COLOR, self._color)
-                rgb = color_util.color_hs_to_RGB(*self._color)
-                self.call_set_color(
-                    int(rgb[0] * self._brightness / 99.0 + 0.5),
-                    int(rgb[1] * self._brightness / 99.0 + 0.5),
-                    int(rgb[2] * self._brightness / 99.0 + 0.5),
-                    int(self._white * self._brightness / 99.0 +
-                        0.5))
-                if self.state == 'off':
-                    self.set_level(int(self._brightness))
-                return
+            # No brightness specified, so we either restore it to
+            # last brightness or switch it on at maximum level
+            if target_brightness is None:
+                if self._brightness == 0:
+                    if self._last_brightness:
+                        self._brightness = self._last_brightness
+                    else:
+                        self._brightness = 100
+            else:
+                # We set it to the target brightness and turn it on
+                self._brightness = scaleto100(target_brightness)
 
-            if self._supported_flags & SUPPORT_BRIGHTNESS:
+        if self._supported_flags & SUPPORT_COLOR:
+            # Update based on parameters
+            self._white = kwargs.get(ATTR_WHITE_VALUE, self._white)
+            self._color = kwargs.get(ATTR_HS_COLOR, self._color)
+            rgb = color_util.color_hs_to_RGB(*self._color)
+            self.call_set_color(
+                int(rgb[0] * self._brightness / 99.0 + 0.5),
+                int(rgb[1] * self._brightness / 99.0 + 0.5),
+                int(rgb[2] * self._brightness / 99.0 + 0.5),
+                int(self._white * self._brightness / 99.0 +
+                    0.5))
+            if self.state == 'off':
                 self.set_level(int(self._brightness))
-                return
+            return
 
-            # The simplest case is left for last. No dimming, just switch on
-            self.call_turn_on()
+        if self._supported_flags & SUPPORT_BRIGHTNESS:
+            self.set_level(int(self._brightness))
+            return
+
+        # The simplest case is left for last. No dimming, just switch on
+        self.call_turn_on()
 
     def turn_off(self, **kwargs):
         """Turn the light off."""
@@ -143,23 +147,27 @@ class FibaroLight(FibaroDevice, Light):
         """Return true if device is on."""
         return self.current_binary_state
 
-    def update(self):
-        """Call to update state."""
-        # Brightness handling
+    async def async_update(self):
+        """Update the state."""
         with self._update_lock:
-            if self._supported_flags & SUPPORT_BRIGHTNESS:
-                self._brightness = float(self.fibaro_device.properties.value)
-            # Color handling
-            if self._supported_flags & SUPPORT_COLOR:
-                # Fibaro communicates the color as an 'R, G, B, W' string
-                rgbw_s = self.fibaro_device.properties.color
-                if rgbw_s == '0,0,0,0' and\
-                        'lastColorSet' in self.fibaro_device.properties:
-                    rgbw_s = self.fibaro_device.properties.lastColorSet
-                rgbw_list = [int(i) for i in rgbw_s.split(",")][:4]
-                if rgbw_list[0] or rgbw_list[1] or rgbw_list[2]:
-                    self._color = color_util.color_RGB_to_hs(*rgbw_list[:3])
-                if (self._supported_flags & SUPPORT_WHITE_VALUE) and \
-                        self.brightness != 0:
-                    self._white = min(255, max(0, rgbw_list[3]*100.0 /
-                                               self._brightness))
+            await self.hass.async_add_executor_job(self._update)
+
+    def _update(self):
+        """Really update the state."""
+        # Brightness handling
+        if self._supported_flags & SUPPORT_BRIGHTNESS:
+            self._brightness = float(self.fibaro_device.properties.value)
+        # Color handling
+        if self._supported_flags & SUPPORT_COLOR:
+            # Fibaro communicates the color as an 'R, G, B, W' string
+            rgbw_s = self.fibaro_device.properties.color
+            if rgbw_s == '0,0,0,0' and\
+                    'lastColorSet' in self.fibaro_device.properties:
+                rgbw_s = self.fibaro_device.properties.lastColorSet
+            rgbw_list = [int(i) for i in rgbw_s.split(",")][:4]
+            if rgbw_list[0] or rgbw_list[1] or rgbw_list[2]:
+                self._color = color_util.color_RGB_to_hs(*rgbw_list[:3])
+            if (self._supported_flags & SUPPORT_WHITE_VALUE) and \
+                    self.brightness != 0:
+                self._white = min(255, max(0, rgbw_list[3]*100.0 /
+                                           self._brightness))
