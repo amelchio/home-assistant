@@ -37,12 +37,15 @@ def scaleto100(value):
     return max(0, min(100, ((value * 100.4) / 255.0)))
 
 
-def setup_platform(hass, config, add_entities, discovery_info=None):
+async def async_setup_platform(hass,
+                               config,
+                               async_add_entities,
+                               discovery_info=None):
     """Perform the setup for Fibaro controller devices."""
     if discovery_info is None:
         return
 
-    add_entities(
+    async_add_entities(
         [FibaroLight(device, hass.data[FIBARO_CONTROLLER])
          for device in hass.data[FIBARO_DEVICES]['light']], True)
 
