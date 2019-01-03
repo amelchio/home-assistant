@@ -61,6 +61,6 @@ class PushoverNotificationService(BaseNotificationService):
                 data['device'] = target
 
             try:
-                self.pushover.send_message(self.user_key, message, **data)
+                self.pushover.message(self.user_key, message, **data)
             except (RequestError, ValueError) as ex:
                 _LOGGER.error("Could not send notification: %s", str(ex))
