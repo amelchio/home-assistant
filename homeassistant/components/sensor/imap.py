@@ -20,7 +20,9 @@ from homeassistant.helpers.entity import Entity
 
 _LOGGER = logging.getLogger(__name__)
 
-REQUIREMENTS = ['aioimaplib==0.7.13']
+REQUIREMENTS = ["https://github.com/bamthomas/aioimaplib/archive/"
+                "ec7cff3e44ddacf618baa61bba69b9fd7936b414.zip#"
+                "aioimaplib==0.666"]
 
 CONF_SERVER = 'server'
 CONF_FOLDER = 'folder'
