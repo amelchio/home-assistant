@@ -48,7 +48,7 @@ class LTESensor(Entity):
     sensor_type = attr.ib()
 
     async def async_update(self):
-        """Update state."""
+        """Update the state."""
         await self.modem_data.async_update()
 
     @property
@@ -81,7 +81,7 @@ class UsageSensor(LTESensor):
 
     @property
     def name(self):
-        """Return the name of the sensor."""
+        """Return the name of the sensor right now."""
         return "Netgear LTE usage"
 
     @property
