@@ -12,12 +12,6 @@ from homeassistant.components import fan, mqtt
 from homeassistant.components.fan import (
     ATTR_SPEED, SPEED_HIGH, SPEED_LOW, SPEED_MEDIUM, SPEED_OFF,
     SUPPORT_OSCILLATE, SUPPORT_SET_SPEED, FanEntity)
-from homeassistant.components.mqtt import (
-    ATTR_DISCOVERY_HASH, CONF_COMMAND_TOPIC, CONF_QOS, CONF_RETAIN,
-    CONF_STATE_TOPIC, CONF_UNIQUE_ID, MqttAttributes, MqttAvailability,
-    MqttDiscoveryUpdate, MqttEntityDeviceInfo, subscription)
-from homeassistant.components.mqtt.discovery import (
-    MQTT_DISCOVERY_NEW, clear_discovery_hash)
 from homeassistant.const import (
     CONF_DEVICE, CONF_NAME, CONF_OPTIMISTIC, CONF_PAYLOAD_OFF, CONF_PAYLOAD_ON,
     CONF_STATE, STATE_OFF, STATE_ON)
@@ -25,6 +19,12 @@ from homeassistant.core import callback
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.typing import ConfigType, HomeAssistantType
+
+from . import (
+    ATTR_DISCOVERY_HASH, CONF_COMMAND_TOPIC, CONF_QOS, CONF_RETAIN,
+    CONF_STATE_TOPIC, CONF_UNIQUE_ID, MqttAttributes, MqttAvailability,
+    MqttDiscoveryUpdate, MqttEntityDeviceInfo, subscription)
+from .discovery import MQTT_DISCOVERY_NEW, clear_discovery_hash
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -212,9 +212,9 @@ class MqttFan(MqttAttributes, MqttAvailability, MqttDiscoveryUpdate,
                 templates[key] = tpl.async_render_with_possible_json_value
 
         @callback
-        def state_received(topic, payload, qos):
+        def state_received(msg):
             """Handle new received MQTT message."""
-            payload = templates[CONF_STATE](payload)
+            payload = templates[CONF_STATE](msg.payload)
             if payload == self._payload[STATE_ON]:
                 self._state = True
             elif payload == self._payload[STATE_OFF]:
@@ -228,9 +228,9 @@ class MqttFan(MqttAttributes, MqttAvailability, MqttDiscoveryUpdate,
                 'qos': self._config.get(CONF_QOS)}
 
         @callback
-        def speed_received(topic, payload, qos):
+        def speed_received(msg):
             """Handle new received MQTT message for the speed."""
-            payload = templates[ATTR_SPEED](payload)
+            payload = templates[ATTR_SPEED](msg.payload)
             if payload == self._payload[SPEED_LOW]:
                 self._speed = SPEED_LOW
             elif payload == self._payload[SPEED_MEDIUM]:
@@ -247,9 +247,9 @@ class MqttFan(MqttAttributes, MqttAvailability, MqttDiscoveryUpdate,
             self._speed = SPEED_OFF
 
         @callback
-        def oscillation_received(topic, payload, qos):
+        def oscillation_received(msg):
             """Handle new received MQTT message for the oscillation."""
-            payload = templates[OSCILLATION](payload)
+            payload = templates[OSCILLATION](msg.payload)
             if payload == self._payload[OSCILLATE_ON_PAYLOAD]:
                 self._oscillation = True
             elif payload == self._payload[OSCILLATE_OFF_PAYLOAD]:

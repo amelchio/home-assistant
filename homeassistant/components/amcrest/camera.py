@@ -2,17 +2,14 @@
 import asyncio
 import logging
 
-from requests import RequestException
-from urllib3.exceptions import ReadTimeoutError
-
-from homeassistant.components.amcrest import (
-    DATA_AMCREST, STREAM_SOURCE_LIST, TIMEOUT)
 from homeassistant.components.camera import Camera
 from homeassistant.components.ffmpeg import DATA_FFMPEG
 from homeassistant.const import CONF_NAME
 from homeassistant.helpers.aiohttp_client import (
-    async_get_clientsession, async_aiohttp_proxy_web,
-    async_aiohttp_proxy_stream)
+    async_aiohttp_proxy_stream, async_aiohttp_proxy_web,
+    async_get_clientsession)
+
+from . import DATA_AMCREST, STREAM_SOURCE_LIST, TIMEOUT
 
 DEPENDENCIES = ['amcrest', 'ffmpeg']
 
@@ -51,13 +48,15 @@ class AmcrestCam(Camera):
 
     async def async_camera_image(self):
         """Return a still image response from the camera."""
+        from amcrest import AmcrestError
+
         async with self._snapshot_lock:
             try:
                 # Send the request to snap a picture and return raw jpg data
                 response = await self.hass.async_add_executor_job(
                     self._camera.snapshot, self._resolution)
                 return response.data
-            except (RequestException, ReadTimeoutError, ValueError) as error:
+            except AmcrestError as error:
                 _LOGGER.error(
                     'Could not get camera image due to error %s', error)
                 return None
@@ -79,7 +78,7 @@ class AmcrestCam(Camera):
                 self.hass, request, stream_coro)
 
         # streaming via ffmpeg
-        from haffmpeg import CameraMjpeg
+        from haffmpeg.camera import CameraMjpeg
 
         streaming_url = self._camera.rtsp_url(typeno=self._resolution)
         stream = CameraMjpeg(self._ffmpeg.binary, loop=self.hass.loop)
@@ -87,8 +86,9 @@ class AmcrestCam(Camera):
             streaming_url, extra_cmd=self._ffmpeg_arguments)
 
         try:
+            stream_reader = await stream.get_reader()
             return await async_aiohttp_proxy_stream(
-                self.hass, request, stream,
+                self.hass, request, stream_reader,
                 self._ffmpeg.ffmpeg_stream_content_type)
         finally:
             await stream.close()
@@ -97,3 +97,8 @@ class AmcrestCam(Camera):
     def name(self):
         """Return the name of this camera."""
         return self._name
+
+    @property
+    def stream_source(self):
+        """Return the source of the stream."""
+        return self._camera.rtsp_url(typeno=self._resolution)
