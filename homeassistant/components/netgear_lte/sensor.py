@@ -61,7 +61,7 @@ class LTESensor(Entity):
             self.hass, DISPATCHER_NETGEAR_LTE, self.async_write_ha_state)
 
     async def async_update(self):
-        """Force update of state."""
+        """Force update of the state."""
         await self.modem_data.async_update()
 
     @property
@@ -104,7 +104,7 @@ class UsageSensor(LTESensor):
 
     @property
     def name(self):
-        """Return the name of the sensor."""
+        """Return the name of the sensor right now."""
         return "Netgear LTE usage"
 
     @property
