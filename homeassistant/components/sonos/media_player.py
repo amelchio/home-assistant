@@ -21,6 +21,7 @@ from homeassistant.const import (
     ATTR_ENTITY_ID, ATTR_TIME, CONF_HOSTS, STATE_IDLE, STATE_OFF, STATE_PAUSED,
     STATE_PLAYING)
 import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.event import call_later
 from homeassistant.util.dt import utcnow
 
 from . import DOMAIN as SONOS_DOMAIN
@@ -339,7 +340,7 @@ class SonosEntity(MediaPlayerDevice):
     def __init__(self, player):
         """Initialize the Sonos entity."""
         self._subscriptions = []
-        self._receives_events = False
+        self._event_timeout = None
         self._volume_increment = 2
         self._unique_id = player.uid
         self._player = player
@@ -482,7 +483,12 @@ class SonosEntity(MediaPlayerDevice):
 
     def _subscribe_to_player_events(self):
         """Add event subscriptions."""
-        self._receives_events = False
+        def _warn_no_push(now):
+            _LOGGER.warning(
+                "Receiving no Sonos events for %s, continuing in polling mode",
+                self.entity_id)
+
+        self._event_timeout = call_later(self.hass, 10, _warn_no_push)
 
         # New player available, build the current group topology
         for entity in self.hass.data[DATA_SONOS].entities:
@@ -526,7 +532,7 @@ class SonosEntity(MediaPlayerDevice):
                 self._media_album_name = None
                 self._media_title = None
                 self._source_name = None
-        elif available and not self._receives_events:
+        elif available and self._event_timeout:
             self.update_groups()
             self.update_volume()
             if self.is_coordinator:
@@ -761,7 +767,9 @@ class SonosEntity(MediaPlayerDevice):
                     self.hass.data[DATA_SONOS].topology_condition.notify_all()
 
         if event:
-            self._receives_events = True
+            if self._event_timeout:
+                self._event_timeout()
+                self._event_timeout = None
 
             if not hasattr(event, 'zone_player_uui_ds_in_group'):
                 return
