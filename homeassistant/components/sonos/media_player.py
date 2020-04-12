@@ -419,7 +419,7 @@ class SonosEntity(MediaPlayerDevice):
         if self._status in ("PAUSED_PLAYBACK", "STOPPED",):
             # Sonos can consider itself "paused" but without having media loaded
             # (happens if playing Spotify and via Spotify app you pick another device to play on)
-            if self._media_title is None:
+            if self.media_title is None:
                 return STATE_IDLE
             return STATE_PAUSED
         if self._status in ("PLAYING", "TRANSITIONING"):
@@ -619,7 +619,9 @@ class SonosEntity(MediaPlayerDevice):
         # try to use the radio name instead.
         try:
             if self._media_title in self._uri or self.state != STATE_PLAYING:
-                self._media_title = variables["enqueued_transport_uri_meta_data"].title
+                uri_meta_data = variables["enqueued_transport_uri_meta_data"]
+                if uri_meta_data not in UNAVAILABLE_VALUES:
+                    self._media_title = uri_meta_data.title
         except (TypeError, KeyError, AttributeError):
             pass
 
