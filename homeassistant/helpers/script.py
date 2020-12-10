@@ -592,9 +592,14 @@ class _ScriptRun:
         choose_data = await self._script._async_get_choose_data(self._step)
 
         for conditions, script in choose_data["choices"]:
-            if all(condition(self._hass, self._variables) for condition in conditions):
-                await self._async_run_script(script)
-                return
+            try:
+                if all(
+                    condition(self._hass, self._variables) for condition in conditions
+                ):
+                    await self._async_run_script(script)
+                    return
+            except exceptions.ConditionError as ex:
+                _LOGGER.info("Error in choose evaluation: %s", ex)
 
         if choose_data["default"]:
             await self._async_run_script(choose_data["default"])
