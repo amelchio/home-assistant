@@ -70,7 +70,7 @@ async def async_attach_trigger(
     template.attach(hass, time_delta)
     value_template = config.get(CONF_VALUE_TEMPLATE)
     unsub_track_same = {}
-    entities_triggered = set()
+    armed_entities = set()
     period: dict = {}
     attribute = config.get(CONF_ATTRIBUTE)
     job = HassJob(action)
@@ -92,24 +92,22 @@ async def async_attach_trigger(
 
     @callback
     def check_numeric_state(entity_id, from_s, to_s):
-        """Return True if criteria are now met."""
+        """Return whether the criteria are met, raise ConditionError if unknown."""
+        return condition.async_numeric_state(
+            hass, to_s, below, above, value_template, variables(entity_id), attribute
+        )
+
+    # If the condition is False at startup, we are already armed.
+    for entity_id in entity_ids:
         try:
-            return condition.async_numeric_state(
-                hass,
-                to_s,
-                below,
-                above,
-                value_template,
-                variables(entity_id),
-                attribute,
-            )
+            if not check_numeric_state(entity_id, None, entity_id):
+                armed_entities.add(entity_id)
         except exceptions.ConditionError as err:
             _LOGGER.info(
-                "Error while checking numeric_state condition for %s: %s",
+                "Error during numeric_state trigger initialization for %s: %s",
                 entity_id,
                 err,
             )
-            return False
 
     @callback
     def state_automation_listener(event):
@@ -138,36 +136,48 @@ async def async_attach_trigger(
                 to_s.context,
             )
 
-        matching = check_numeric_state(entity_id, from_s, to_s)
+        @callback
+        def check_numeric_state_no_raise(entity_id, from_s, to_s):
+            """Return True if the criteria are now met, False otherwise."""
+            try:
+                return check_numeric_state(entity_id, from_s, to_s)
+            except exceptions.ConditionError:
+                return False
 
-        if not matching:
-            entities_triggered.discard(entity_id)
-        elif entity_id not in entities_triggered:
-            entities_triggered.add(entity_id)
+        try:
+            matching = check_numeric_state(entity_id, from_s, to_s)
 
-            if time_delta:
-                try:
-                    period[entity_id] = cv.positive_time_period(
-                        template.render_complex(time_delta, variables(entity_id))
+            if not matching:
+                armed_entities.add(entity_id)
+            elif entity_id in armed_entities:
+                armed_entities.discard(entity_id)
+
+                if time_delta:
+                    try:
+                        period[entity_id] = cv.positive_time_period(
+                            template.render_complex(time_delta, variables(entity_id))
+                        )
+                    except (exceptions.TemplateError, vol.Invalid) as ex:
+                        _LOGGER.error(
+                            "Error rendering '%s' for template: %s",
+                            automation_info["name"],
+                            ex,
+                        )
+                        return
+
+                    unsub_track_same[entity_id] = async_track_same_state(
+                        hass,
+                        period[entity_id],
+                        call_action,
+                        entity_ids=entity_id,
+                        async_check_same_func=check_numeric_state_no_raise,
                     )
-                except (exceptions.TemplateError, vol.Invalid) as ex:
-                    _LOGGER.error(
-                        "Error rendering '%s' for template: %s",
-                        automation_info["name"],
-                        ex,
-                    )
-                    entities_triggered.discard(entity_id)
-                    return
-
-                unsub_track_same[entity_id] = async_track_same_state(
-                    hass,
-                    period[entity_id],
-                    call_action,
-                    entity_ids=entity_id,
-                    async_check_same_func=check_numeric_state,
-                )
-            else:
-                call_action()
+                else:
+                    call_action()
+        except exceptions.ConditionError as err:
+            _LOGGER.info(
+                "The numeric_state trigger for %s had an error: %s", entity_id, err
+            )
 
     unsub = async_track_state_change_event(hass, entity_ids, state_automation_listener)
 
